@@ -3,7 +3,6 @@ import { ArrowUp, LoaderCircle } from 'lucide-react'
 
 type NoteComposerProps = {
   context: ReactNode
-  notice?: ReactNode
   children: ReactNode
   status?: ReactNode
   error?: string | null
@@ -15,7 +14,6 @@ type NoteComposerProps = {
 
 export function NoteComposer({
   context,
-  notice,
   children,
   status,
   error,
@@ -27,8 +25,6 @@ export function NoteComposer({
   return (
     <footer className="composer">
       <div className="composer-inner">
-        <div className="composer-context">{context}</div>
-        {notice}
         <div className="composer-surface" data-invalid={error ? true : undefined}>
           {children}
           {error && (
@@ -37,6 +33,7 @@ export function NoteComposer({
             </p>
           )}
           <div className="composer-bottom">
+            {context}
             {status}
             <button
               type="button"

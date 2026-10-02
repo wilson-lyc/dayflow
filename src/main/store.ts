@@ -1,19 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
-import {
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  unlinkSync,
-  existsSync,
-  watch
-} from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { app, nativeTheme, BrowserWindow } from 'electron'
+import { app, nativeTheme } from 'electron'
 import {
   localDate,
   validDate,
-  type Draft,
+  type CreateLog,
   type Log,
   type Preferences,
   type Bootstrap,
@@ -28,20 +20,6 @@ export class ServiceError extends Error {
   }
 }
 let db: DatabaseSync | undefined
-let epoch = 0
-let cacheExisted = false
-let cacheWatching = false
-const cacheFile = (): string =>
-  process.platform === 'darwin'
-    ? join(app.getPath('home'), 'Library', 'Caches', 'Dayflow', 'draft.json')
-    : join(app.getPath('userData'), 'cache', 'draft.json')
-function resetIfMissing(): void {
-  if (cacheExisted && !existsSync(cacheFile())) {
-    cacheExisted = false
-    epoch++
-    BrowserWindow.getAllWindows().forEach((w) => w.webContents.send('dayflow:cache-reset', epoch))
-  }
-}
 function database(): DatabaseSync {
   if (db) return db
   const path = join(app.getPath('userData'), 'data', 'dayflow.sqlite')
@@ -137,88 +115,18 @@ function validate(content: string, at: number, zone: string): string {
     throw new ServiceError('time')
   }
 }
-function validateDraft(draft: Draft): void {
-  if (
-    draft.version !== 1 ||
-    typeof draft.content !== 'string' ||
-    !validDate(draft.targetDate) ||
-    !['current-time', 'custom'].includes(draft.timeMode) ||
-    !Number.isFinite(draft.cachedAt)
-  )
-    throw new ServiceError('cache')
-  try {
-    localDate(Date.now(), draft.timeZone)
-  } catch {
-    throw new ServiceError('cache')
-  }
-  if (draft.recordedAt !== null && !Number.isSafeInteger(draft.recordedAt))
-    throw new ServiceError('cache')
-  if (
-    draft.pendingSubmission &&
-    (!/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(
-      draft.pendingSubmission.id
-    ) ||
-      !Number.isSafeInteger(draft.pendingSubmission.recordedAt))
-  )
-    throw new ServiceError('cache')
-}
-export function cache(draft: Draft | null, expectedEpoch: number): number {
-  resetIfMissing()
-  if (epoch !== expectedEpoch) throw new ServiceError('cache-reset')
-  try {
-    mkdirSync(dirname(cacheFile()), { recursive: true })
-    if (!draft) {
-      if (existsSync(cacheFile())) unlinkSync(cacheFile())
-      cacheExisted = false
-      epoch++
-    } else {
-      validateDraft(draft)
-      const temp = `${cacheFile()}.tmp`
-      writeFileSync(temp, JSON.stringify(draft), { encoding: 'utf8', mode: 0o600, flush: true })
-      renameSync(temp, cacheFile())
-      cacheExisted = true
-    }
-    return epoch
-  } catch (error) {
-    if (error instanceof ServiceError) throw error
-    throw new ServiceError('cache')
-  }
-}
-export function create(
-  draft: Draft,
-  expectedEpoch: number
-): { log: Log; cacheCleared: boolean; cacheEpoch: number } {
+export function create(input: CreateLog): Log {
+  if (!input || !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(input.id))
+    throw new ServiceError('state')
+  const date = validate(input.content, input.recordedAt, input.timeZone)
+  if (!validDate(input.targetDate) || date !== input.targetDate) throw new ServiceError('time')
+  const existing = find(input.id)
+  if (existing) return existing
+  const now = Date.now()
   database()
-  validateDraft(draft)
-  const pending = draft.pendingSubmission
-  if (!pending) throw new ServiceError('state')
-  const existing = find(pending.id)
-  if (!existing) {
-    const date = validate(draft.content, pending.recordedAt, pending.timeZone)
-    if (date !== draft.targetDate) throw new ServiceError('time')
-    cache(draft, expectedEpoch)
-    const now = Date.now()
-    database()
-      .prepare('INSERT INTO logs VALUES(?,?,?,?,?,?,?,?,0)')
-      .run(
-        pending.id,
-        'manual',
-        draft.content,
-        pending.recordedAt,
-        pending.timeZone,
-        date,
-        now,
-        now
-      )
-  }
-  const log = find(pending.id)!
-  let cacheCleared = true
-  try {
-    cache(null, expectedEpoch)
-  } catch {
-    cacheCleared = false
-  }
-  return { log, cacheCleared, cacheEpoch: epoch }
+    .prepare('INSERT INTO logs VALUES(?,?,?,?,?,?,?,?,0)')
+    .run(input.id, 'manual', input.content, input.recordedAt, input.timeZone, date, now, now)
+  return find(input.id)!
 }
 export function edit(id: string, content: string, at: number | null, zone: string): Log {
   const log = find(id)
@@ -282,43 +190,10 @@ export function bootstrap(): Bootstrap {
     preferenceError = true
   }
   nativeTheme.themeSource = prefs.themeMode
-  let draft: Draft | null = null
-  try {
-    resetIfMissing()
-    const parsed = JSON.parse(readFileSync(cacheFile(), 'utf8')) as Draft
-    validateDraft(parsed)
-    draft = parsed
-    cacheExisted = true
-    if (draft.pendingSubmission && find(draft.pendingSubmission.id)) {
-      try {
-        cache(null, epoch)
-      } catch {
-        /* keep deduplication token on disk */
-      }
-      draft = null
-    }
-  } catch {
-    draft = null
-  }
-  try {
-    if (!cacheWatching) {
-      mkdirSync(dirname(cacheFile()), { recursive: true })
-      watch(dirname(cacheFile()), { persistent: false }, () => {
-        setTimeout(resetIfMissing, 100)
-      }).on('error', () => {
-        cacheWatching = false
-      })
-      cacheWatching = true
-    }
-  } catch {
-    /* An unavailable draft cache must not block formal logs. */
-  }
   return {
     preferences: prefs,
     locale: resolveLocale(prefs.localePreference, app.getPreferredSystemLanguages()),
     dark: nativeTheme.shouldUseDarkColors,
-    draft,
-    cacheEpoch: epoch,
     preferenceError,
     platform: process.platform
   }

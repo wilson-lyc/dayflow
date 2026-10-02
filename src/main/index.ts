@@ -99,7 +99,6 @@ else {
     handle('create', store.create)
     handle('edit', store.edit)
     handle('change', store.change)
-    handle('cache', store.cache)
     handle('preference', store.preference)
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([

@@ -18,29 +18,20 @@ export interface Submission {
   recordedAt: number
   timeZone: string
 }
-export interface Draft {
-  version: 1
+export interface CreateLog extends Submission {
   content: string
   targetDate: string
-  timeMode: 'current-time' | 'custom'
-  recordedAt: number | null
-  timeZone: string
-  cachedAt: number
-  pendingSubmission: Submission | null
 }
 export interface Preferences {
   themeMode: ThemeMode
   localePreference: string | null
 }
-export type ErrorCode =
-  'storage' | 'cache' | 'empty' | 'too-long' | 'time' | 'state' | 'version' | 'cache-reset'
+export type ErrorCode = 'storage' | 'empty' | 'too-long' | 'time' | 'state' | 'version'
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode }
 export interface Bootstrap {
   preferences: Preferences
   locale: Locale
   dark: boolean
-  draft: Draft | null
-  cacheEpoch: number
   preferenceError: boolean
   platform: string
 }
@@ -48,10 +39,7 @@ export interface DayflowAPI {
   bootstrap(): Promise<Result<Bootstrap>>
   list(date: string | null): Promise<Result<Log[]>>
   find(id: string): Promise<Result<Log | null>>
-  create(
-    draft: Draft,
-    epoch: number
-  ): Promise<Result<{ log: Log; cacheCleared: boolean; cacheEpoch: number }>>
+  create(input: CreateLog): Promise<Result<Log>>
   edit(
     id: string,
     content: string,
@@ -59,14 +47,12 @@ export interface DayflowAPI {
     timeZone: string
   ): Promise<Result<Log>>
   change(id: string, action: 'trash' | 'restore' | 'delete'): Promise<Result<Log | null>>
-  cache(draft: Draft | null, epoch: number): Promise<Result<number>>
   preference(key: keyof Preferences, value: string): Promise<Result<Preferences>>
   finishClose(): void
   cancelClose(): void
   ready(): void
   onClose(callback: () => void): () => void
   onSystemTheme(callback: (dark: boolean) => void): () => void
-  onCacheReset(callback: (epoch: number) => void): () => void
 }
 export function localDate(timestamp: number, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {

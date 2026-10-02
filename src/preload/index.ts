@@ -11,16 +11,14 @@ const api: DayflowAPI = {
   bootstrap: () => ipcRenderer.invoke('dayflow:bootstrap'),
   list: (date) => ipcRenderer.invoke('dayflow:list', date),
   find: (id) => ipcRenderer.invoke('dayflow:find', id),
-  create: (draft, epoch) => ipcRenderer.invoke('dayflow:create', draft, epoch),
+  create: (input) => ipcRenderer.invoke('dayflow:create', input),
   edit: (id, content, at, zone) => ipcRenderer.invoke('dayflow:edit', id, content, at, zone),
   change: (id, action) => ipcRenderer.invoke('dayflow:change', id, action),
-  cache: (draft, epoch) => ipcRenderer.invoke('dayflow:cache', draft, epoch),
   preference: (key, value) => ipcRenderer.invoke('dayflow:preference', key, value),
   finishClose: () => ipcRenderer.send('dayflow:finish-close'),
   cancelClose: () => ipcRenderer.send('dayflow:cancel-close'),
   ready: () => ipcRenderer.send('dayflow:ready'),
   onClose: (callback) => subscribe('dayflow:close', callback),
-  onSystemTheme: (callback) => subscribe('dayflow:system-theme', callback),
-  onCacheReset: (callback) => subscribe('dayflow:cache-reset', callback)
+  onSystemTheme: (callback) => subscribe('dayflow:system-theme', callback)
 }
 contextBridge.exposeInMainWorld('api', api)

@@ -22,13 +22,11 @@ export function errorKey(code: ErrorCode): MessageKey {
   return (
     {
       storage: 'operationError',
-      cache: 'draftError',
       empty: 'empty',
       'too-long': 'tooLong',
       time: 'invalidTime',
       state: 'stateError',
-      version: 'versionError',
-      'cache-reset': 'cacheReset'
+      version: 'versionError'
     } as const
   )[code]
 }

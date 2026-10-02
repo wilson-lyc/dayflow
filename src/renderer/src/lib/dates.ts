@@ -1,15 +1,21 @@
-import { localDate, type Draft } from '../../../shared/model'
+import { localDate, type Submission } from '../../../shared/model'
 export const systemZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 export const today = (): string => localDate(Date.now(), systemZone())
+export interface Draft {
+  content: string
+  targetDate: string
+  timeMode: 'current-time' | 'custom'
+  recordedAt: number | null
+  timeZone: string
+  pendingSubmission: Submission | null
+}
 export function blankDraft(date = today()): Draft {
   return {
-    version: 1,
     content: '',
     targetDate: date,
     timeMode: date === today() ? 'current-time' : 'custom',
     recordedAt: null,
     timeZone: systemZone(),
-    cachedAt: Date.now(),
     pendingSubmission: null
   }
 }

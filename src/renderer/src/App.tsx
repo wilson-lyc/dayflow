@@ -38,6 +38,7 @@ import {
   AlertDialogFooter
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
+import { DateTimePicker } from './components/date-time-picker'
 import { NoteComposer } from './components/note-composer'
 import { NoteBody } from './components/note-body'
 import {
@@ -48,13 +49,14 @@ import {
   timeText,
   wallTime,
   systemZone,
-  hasDraft
+  hasDraft,
+  type Draft
 } from './lib/dates'
 import { translator, errorKey, languages, type MessageKey } from './lib/i18n'
 import { cn } from './lib/utils'
 import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
-import type { Draft, Log, Locale, Preferences, ErrorCode } from '../../shared/model'
+import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
 
 type View = 'daily' | 'trash' | 'settings'
 type Editor = {
@@ -67,8 +69,7 @@ type Editor = {
   error: ErrorCode | null
 }
 type Notice = { key: MessageKey; date?: string; trash?: boolean; warning?: boolean; id?: string }
-type Confirmation =
-  { kind: 'trash' | 'delete'; log: Log } | { kind: 'clear' | 'leave' | 'close-cache' }
+type Confirmation = { kind: 'trash' | 'delete'; log: Log } | { kind: 'leave' }
 const api = window.api
 
 function App(): React.JSX.Element {
@@ -90,11 +91,6 @@ function App(): React.JSX.Element {
   const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [draft, setDraft] = useState<Draft>(() => blankDraft())
   const draftRef = useRef(draft)
-  const epoch = useRef(0)
-  const draftVersion = useRef(0)
-  const cacheQueue = useRef<Promise<boolean>>(Promise.resolve(true))
-  const cacheTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [cacheState, setCacheState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [saveError, setSaveError] = useState<ErrorCode | null>(null)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -118,7 +114,6 @@ function App(): React.JSX.Element {
   const loadId = useRef(0)
   const scrollTarget = useRef<string | 'bottom' | null>('bottom')
   const mounted = useRef(true)
-  const closing = useRef(false)
   const deferredClose = useRef(false)
   const trashScroll = useRef(0)
   const restoreTrashScroll = useRef(false)
@@ -141,42 +136,12 @@ function App(): React.JSX.Element {
       queueMicrotask(() => closeHandler.current())
     }
   }
-  function invalidateCache(): void {
-    draftVersion.current++
-    if (cacheTimer.current) clearTimeout(cacheTimer.current)
-    cacheTimer.current = null
-  }
   function resetDraft(next = blankDraft(dateRef.current)): void {
-    invalidateCache()
     assignDraft(next)
-    setCacheState('idle')
     setSaveError(null)
     editablePending.current = true
     setPendingEditable(true)
   }
-
-  const persistDraft = useCallback((value: Draft, revision: number): Promise<boolean> => {
-    const task = cacheQueue.current
-      .then(async () => {
-        if (revision !== draftVersion.current) return true
-        const result = await api.cache(hasDraft(value) ? value : null, epoch.current)
-        if (result.ok) epoch.current = Math.max(epoch.current, result.value)
-        if (!mounted.current || revision !== draftVersion.current) return result.ok
-        if (result.ok) {
-          setCacheState(value.content ? 'saved' : 'idle')
-          return true
-        }
-        if (result.error === 'cache-reset') return false
-        setCacheState('error')
-        return false
-      })
-      .catch(() => {
-        setCacheState('error')
-        return false
-      })
-    cacheQueue.current = task
-    return task
-  }, [])
 
   function updateDraft(patch: Partial<Draft>): void {
     if (busyRef.current || editorRef.current) return
@@ -184,16 +149,10 @@ function App(): React.JSX.Element {
       setSaveError('state')
       return
     }
-    invalidateCache()
     setClockTimestamp(Date.now())
-    const next = { ...draftRef.current, ...patch, pendingSubmission: null, cachedAt: Date.now() }
+    const next = { ...draftRef.current, ...patch, pendingSubmission: null }
     assignDraft(next)
     setSaveError(null)
-    setCacheState('saving')
-    const revision = draftVersion.current
-    cacheTimer.current = setTimeout(() => {
-      void persistDraft(next, revision)
-    }, 300)
   }
   const load = useCallback(
     async (
@@ -265,18 +224,12 @@ function App(): React.JSX.Element {
       return
     }
     const value = result.value
-    epoch.current = value.cacheEpoch
     setLocale(value.locale)
     setPrefs(value.preferences)
     setPlatform(value.platform)
     document.documentElement.classList.toggle('dark', value.dark)
     setPreferenceError(value.preferenceError)
     if (value.preferenceError) setNotice({ key: 'preferencesError', warning: true })
-    if (value.draft) {
-      assignDraft(value.draft)
-      setNotice({ key: 'recovered' })
-      setCacheState('saved')
-    } else if (!draftRef.current.content) assignDraft(blankDraft(dateRef.current))
     setReady(true)
     requestAnimationFrame(() => api.ready())
     await load(dateRef.current, viewRef.current, 'bottom')
@@ -290,18 +243,11 @@ function App(): React.JSX.Element {
     const removeTheme = api.onSystemTheme((dark) =>
       document.documentElement.classList.toggle('dark', dark)
     )
-    const removeCache = api.onCacheReset((value) => {
-      epoch.current = value
-      resetDraft()
-      setNotice({ key: 'cacheReset', warning: true })
-    })
     const timer = setInterval(() => setClockTimestamp(Date.now()), 1000)
     return () => {
       mounted.current = false
       removeTheme()
-      removeCache()
       clearInterval(timer)
-      if (cacheTimer.current) clearTimeout(cacheTimer.current)
     }
     // Bootstrap and listeners run once; event handlers use refs for current data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,24 +282,6 @@ function App(): React.JSX.Element {
       action()
     }
   }
-  async function closeWindow(): Promise<void> {
-    if (closing.current || busyRef.current) return
-    closing.current = true
-    setLocked(true)
-    invalidateCache()
-    setCacheState(draftRef.current.content ? 'saving' : 'idle')
-    const saved = await persistDraft(
-      { ...draftRef.current, cachedAt: Date.now() },
-      draftVersion.current
-    )
-    closing.current = false
-    setLocked(false)
-    if (saved) api.finishClose()
-    else {
-      setConfirmError(null)
-      setConfirmation({ kind: 'close-cache' })
-    }
-  }
   const closeHandler = useRef<() => void>(() => {})
   useLayoutEffect(() => {
     closeHandler.current = () => {
@@ -361,9 +289,7 @@ function App(): React.JSX.Element {
         deferredClose.current = true
         return
       }
-      protect(() => {
-        void closeWindow()
-      })
+      protect(() => api.finishClose())
     }
   })
   useEffect(() => api.onClose(() => closeHandler.current()), [])
@@ -386,30 +312,28 @@ function App(): React.JSX.Element {
   async function submit(submittedAt: number): Promise<void> {
     if (!ready || busyRef.current || editorRef.current || draftValidation()) return
     setLocked(true)
-    invalidateCache()
     setSaveError(null)
-    await cacheQueue.current
     const original = draftRef.current
     const pending = original.pendingSubmission ?? {
       id: crypto.randomUUID(),
       recordedAt: original.timeMode === 'current-time' ? submittedAt : original.recordedAt!,
       timeZone: original.timeZone
     }
-    const submission = { ...original, pendingSubmission: pending, cachedAt: submittedAt }
+    const submission = { ...original, pendingSubmission: pending }
     assignDraft(submission)
     editablePending.current = false
     setPendingEditable(false)
-    const result = await api.create(submission, epoch.current)
+    const result = await api.create({
+      ...pending,
+      content: original.content,
+      targetDate: original.targetDate
+    })
     if (!result.ok) {
       const existing = await api.find(pending.id)
       if (existing.ok && existing.value) {
-        // Resolve an uncertain response by the same stable ID, then retry cache cleanup.
-        const resolved = await api.create(submission, epoch.current)
-        if (resolved.ok) {
-          await finishSubmission(resolved.value)
-          setLocked(false)
-          return
-        }
+        await finishSubmission(existing.value)
+        setLocked(false)
+        return
       }
       editablePending.current = existing.ok && !existing.value
       setPendingEditable(existing.ok && !existing.value)
@@ -420,18 +344,10 @@ function App(): React.JSX.Element {
     await finishSubmission(result.value)
     setLocked(false)
   }
-  async function finishSubmission(value: {
-    log: Log
-    cacheCleared: boolean
-    cacheEpoch: number
-  }): Promise<void> {
-    epoch.current = value.cacheEpoch
-    resetDraft(blankDraft(value.log.localDate))
-    setNotice({
-      key: value.cacheCleared ? 'recorded' : 'cacheWarning',
-      warning: !value.cacheCleared
-    })
-    navigate('daily', value.log.localDate, value.log.id)
+  async function finishSubmission(log: Log): Promise<void> {
+    resetDraft(blankDraft(log.localDate))
+    setNotice({ key: 'recorded' })
+    navigate('daily', log.localDate, log.id)
     requestAnimationFrame(() => inputRef.current?.focus())
   }
   function beginEdit(log: Log): void {
@@ -522,22 +438,6 @@ function App(): React.JSX.Element {
       await operate(confirmation.log, confirmation.kind)
       return
     }
-    if (confirmation.kind === 'clear') {
-      invalidateCache()
-      await cacheQueue.current
-      setLocked(true)
-      const result = await api.cache(null, epoch.current)
-      setLocked(false)
-      if (!result.ok) {
-        setConfirmError(result.error)
-        return
-      }
-      epoch.current = result.value
-      resetDraft()
-      setConfirmation(null)
-      inputRef.current?.focus()
-      return
-    }
     if (confirmation.kind === 'leave') {
       if (await saveEdit()) {
         setConfirmation(null)
@@ -545,10 +445,6 @@ function App(): React.JSX.Element {
         leaveAction.current = null
         next?.()
       }
-    }
-    if (confirmation.kind === 'close-cache') {
-      setConfirmation(null)
-      await closeWindow()
     }
   }
   const wordCount = Array.from(draft.content).length
@@ -571,30 +467,10 @@ function App(): React.JSX.Element {
       ? 'trashConfirm'
       : confirmKind === 'delete'
         ? 'deleteConfirm'
-        : confirmKind === 'clear'
-          ? 'clearConfirm'
-          : confirmKind === 'leave'
-            ? 'unsaved'
-            : 'closeCache'
+        : 'unsaved'
   const confirmHint: MessageKey =
-    confirmKind === 'trash'
-      ? 'trashHint'
-      : confirmKind === 'delete'
-        ? 'deleteHint'
-        : confirmKind === 'clear'
-          ? 'clearHint'
-          : confirmKind === 'leave'
-            ? 'unsavedHint'
-            : 'closeCacheHint'
+    confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
   const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
-  function draftDateChange(selected: string): void {
-    updateDraft({
-      targetDate: selected,
-      timeMode: selected === clockDate ? 'current-time' : 'custom',
-      recordedAt: null,
-      timeZone: systemZone()
-    })
-  }
 
   return (
     <div className={cn('window-shell', platform !== 'darwin' && 'other-platform')}>
@@ -708,26 +584,6 @@ function App(): React.JSX.Element {
               {notice.trash && (
                 <Button variant="link" size="sm" onClick={() => protect(() => navigate('trash'))}>
                   {t('trash')}
-                </Button>
-              )}
-              {notice.key === 'cacheWarning' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    invalidateCache()
-                    await cacheQueue.current
-                    const result = await api.cache(
-                      draftRef.current.content ? draftRef.current : null,
-                      epoch.current
-                    )
-                    if (result.ok) {
-                      epoch.current = result.value
-                      setNotice(null)
-                    }
-                  }}
-                >
-                  {t('retry')}
                 </Button>
               )}
               <Button
@@ -1065,146 +921,23 @@ function App(): React.JSX.Element {
           {view === 'daily' && (date <= clockDate || draft.content) && (
             <NoteComposer
               context={
-                <div className="composer-heading">
-                  <span>{t('recordTo')}</span>
-                  <DatePicker
-                    date={draft.targetDate}
-                    locale={locale}
-                    label={draft.targetDate}
-                    max={clockDate}
-                    disabled={busy || !!editor}
-                    onChange={draftDateChange}
-                  />
-                  <span className="text-muted-foreground">
-                    {t(draft.targetDate === clockDate ? 'today' : 'backfill')}
-                  </span>
-                  <div className="composer-time">
-                    <span>{t('time')}</span>
-                    {draft.timeMode === 'current-time' ? (
-                      <>
-                        <span>{t('current')}</span>
-                        <Button
-                          size="sm"
-                          variant="link"
-                          disabled={busy || !!editor}
-                          onClick={() =>
-                            updateDraft({ timeMode: 'custom', recordedAt: Date.now() })
-                          }
-                        >
-                          {t('adjust')}
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Input
-                          type="time"
-                          aria-label={t('time')}
-                          className="w-28"
-                          value={
-                            draft.recordedAt === null
-                              ? ''
-                              : timeText(draft.recordedAt, draft.timeZone)
-                          }
-                          disabled={busy || !!editor}
-                          onChange={(event) =>
-                            updateDraft({
-                              recordedAt: wallTime(
-                                draft.targetDate,
-                                event.target.value,
-                                draft.timeZone
-                              )
-                            })
-                          }
-                        />
-                        {draft.targetDate === clockDate && (
-                          <Button
-                            size="sm"
-                            variant="link"
-                            disabled={busy || !!editor}
-                            onClick={() =>
-                              updateDraft({
-                                timeMode: 'current-time',
-                                recordedAt: null,
-                                timeZone: systemZone()
-                              })
-                            }
-                          >
-                            {t('current')}
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              }
-              notice={
-                <>
-                  {draft.targetDate !== date && (
-                    <div className="draft-location">
-                      <span>{t('draftBelongs', { date: draft.targetDate })}</span>
-                      <Button
-                        size="sm"
-                        variant="link"
-                        disabled={busy}
-                        onClick={() => protect(() => navigate('daily', draft.targetDate))}
-                      >
-                        {t('viewDay')}
-                      </Button>
-                      {date <= clockDate && (
-                        <Button
-                          size="sm"
-                          variant="link"
-                          disabled={busy || !!editor}
-                          onClick={() => draftDateChange(date)}
-                        >
-                          {t('useViewed')}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </>
+                <DateTimePicker
+                  value={draft}
+                  locale={locale}
+                  now={clockTimestamp}
+                  disabled={
+                    busy ||
+                    !!editor ||
+                    !ready ||
+                    (draft.pendingSubmission !== null && !pendingEditable)
+                  }
+                  onChange={updateDraft}
+                />
               }
               status={
-                <div className="draft-status" role="status">
-                  {draft.content && (
-                    <>
-                      <span>
-                        {t(
-                          cacheState === 'saving'
-                            ? 'draftSaving'
-                            : cacheState === 'error'
-                              ? 'draftError'
-                              : 'draftSaved'
-                        )}
-                      </span>
-                      {cacheState === 'error' && (
-                        <Button
-                          size="sm"
-                          variant="link"
-                          disabled={busy}
-                          onClick={() => {
-                            setCacheState('saving')
-                            void persistDraft(draftRef.current, draftVersion.current)
-                          }}
-                        >
-                          {t('retry')}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy || !!editor}
-                        onClick={() => {
-                          setConfirmError(null)
-                          setConfirmation({ kind: 'clear' })
-                        }}
-                      >
-                        {t('clearDraft')}
-                      </Button>
-                    </>
-                  )}
-                  {wordCount >= 9000 && <span>{t('length', { n: wordCount })}</span>}
-                </div>
+                wordCount >= 9000 ? (
+                  <span className="composer-length">{t('length', { n: wordCount })}</span>
+                ) : null
               }
               error={
                 saveError || (draft.content && invalid && invalid !== 'empty')
@@ -1321,21 +1054,6 @@ function App(): React.JSX.Element {
                 {t('discard')}
               </Button>
             )}
-            {confirmKind === 'close-cache' && (
-              <Button
-                variant="destructive"
-                disabled={busy}
-                onClick={async () => {
-                  invalidateCache()
-                  await cacheQueue.current
-                  // Explicit discard is authorized here; preserve formal logs and preferences.
-                  await api.cache(null, epoch.current)
-                  api.finishClose()
-                }}
-              >
-                {t('closeDiscard')}
-              </Button>
-            )}
             <Button
               variant={confirmKind === 'delete' ? 'destructive' : 'default'}
               disabled={busy}
@@ -1348,11 +1066,7 @@ function App(): React.JSX.Element {
                     ? 'moveTrash'
                     : confirmKind === 'delete'
                       ? 'delete'
-                      : confirmKind === 'clear'
-                        ? 'clear'
-                        : confirmKind === 'leave'
-                          ? 'saveChanges'
-                          : 'retry'
+                      : 'saveChanges'
               )}
             </Button>
           </AlertDialogFooter>
