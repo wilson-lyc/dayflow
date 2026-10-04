@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  MoreHorizontal,
-  Settings,
-  Trash2
-} from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Textarea } from './components/ui/textarea'
 import { Input } from './components/ui/input'
@@ -15,20 +8,12 @@ import { Alert, AlertDescription } from './components/ui/alert'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './components/ui/empty'
 import { Skeleton } from './components/ui/skeleton'
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from './components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from './components/ui/dropdown-menu'
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from './components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -38,9 +23,13 @@ import {
   AlertDialogFooter
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
-import { DateTimePicker } from './components/date-time-picker'
-import { NoteComposer } from './components/note-composer'
-import { NoteBody } from './components/note-body'
+import { HomePage } from './components/home-page'
+import { SettingsPage, type SettingsModule } from './components/settings-page'
+import { PreferenceContent } from './components/preference-content'
+import { TrashContent } from './components/trash-content'
+import { NotesList } from './components/notes-list'
+import { QuickNoteModule } from './components/quick-note-module'
+import { validateQuickNote } from './lib/quick-note'
 import {
   blankDraft,
   today,
@@ -52,13 +41,14 @@ import {
   hasDraft,
   type Draft
 } from './lib/dates'
-import { translator, errorKey, languages, type MessageKey } from './lib/i18n'
+import { translator, errorKey, type MessageKey } from './lib/i18n'
 import { cn } from './lib/utils'
 import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
 import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
 
-type View = 'daily' | 'trash' | 'settings'
+type View = 'daily' | 'settings'
+type ListScope = 'daily' | 'trash'
 type Editor = {
   log: Log
   content: string
@@ -81,8 +71,8 @@ function App(): React.JSX.Element {
   const [bootError, setBootError] = useState<ErrorCode | null>(null)
   const [view, setView] = useState<View>('daily')
   const viewRef = useRef<View>('daily')
-  const [returnView, setReturnView] = useState<'daily' | 'trash'>('daily')
-  const [settingsModule, setSettingsModule] = useState<'general' | 'appearance'>('general')
+  const [settingsModule, setSettingsModule] = useState<SettingsModule>('general')
+  const settingsModuleRef = useRef<SettingsModule>('general')
   const [date, setDate] = useState(today)
   const dateRef = useRef(date)
   const [clockTimestamp, setClockTimestamp] = useState(Date.now)
@@ -98,6 +88,8 @@ function App(): React.JSX.Element {
   const [pendingEditable, setPendingEditable] = useState(true)
   const [editor, setEditor] = useState<Editor | null>(null)
   const editorRef = useRef(editor)
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
+  const editingIdRef = useRef<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [preferenceError, setPreferenceError] = useState(false)
   const [preferenceBusy, setPreferenceBusy] = useState(false)
@@ -118,7 +110,6 @@ function App(): React.JSX.Element {
   const trashScroll = useRef(0)
   const restoreTrashScroll = useRef(false)
   const focusSettings = useRef(false)
-  const settingsContentRef = useRef<HTMLElement>(null)
 
   const assignDraft = useCallback((next: Draft): void => {
     draftRef.current = next
@@ -157,10 +148,9 @@ function App(): React.JSX.Element {
   const load = useCallback(
     async (
       selected: string,
-      page: View,
+      page: ListScope,
       target: string | 'bottom' | null = null
     ): Promise<void> => {
-      if (page === 'settings') return
       const request = ++loadId.current
       setListState('loading')
       setLogs([])
@@ -182,13 +172,12 @@ function App(): React.JSX.Element {
     target: string | 'bottom' = 'bottom'
   ): void {
     if (page === 'settings') {
-      if (viewRef.current === 'trash') trashScroll.current = listRef.current?.scrollTop ?? 0
-      setReturnView(viewRef.current === 'trash' ? 'trash' : 'daily')
       loadId.current++
     }
     if (viewRef.current === 'settings' && page !== 'settings') {
+      if (settingsModuleRef.current === 'trash')
+        trashScroll.current = listRef.current?.scrollTop ?? 0
       focusSettings.current = true
-      restoreTrashScroll.current = page === 'trash'
     }
     if (!hasDraft(draftRef.current) && selected !== dateRef.current)
       resetDraft(blankDraft(selected))
@@ -196,7 +185,29 @@ function App(): React.JSX.Element {
     setDate(selected)
     viewRef.current = page
     setView(page)
-    if (page !== 'settings') void load(selected, page, target)
+    if (page === 'daily') {
+      restoreTrashScroll.current = false
+      void load(selected, 'daily', target)
+    } else if (settingsModuleRef.current === 'trash') {
+      restoreTrashScroll.current = true
+      void load(selected, 'trash', 'bottom')
+    }
+  }
+  function selectSettingsModule(module: SettingsModule): void {
+    protect(() => {
+      if (viewRef.current === 'settings' && settingsModuleRef.current === 'trash')
+        trashScroll.current = listRef.current?.scrollTop ?? 0
+      settingsModuleRef.current = module
+      setSettingsModule(module)
+      if (viewRef.current !== 'settings') navigate('settings')
+      else {
+        loadId.current++
+        if (module === 'trash') {
+          restoreTrashScroll.current = true
+          void load(dateRef.current, 'trash', 'bottom')
+        }
+      }
+    })
   }
   useLayoutEffect(() => {
     if (listState !== 'ready' || !scrollTarget.current) return
@@ -232,7 +243,8 @@ function App(): React.JSX.Element {
     if (value.preferenceError) setNotice({ key: 'preferencesError', warning: true })
     setReady(true)
     requestAnimationFrame(() => api.ready())
-    await load(dateRef.current, viewRef.current, 'bottom')
+    if (viewRef.current === 'daily') await load(dateRef.current, 'daily', 'bottom')
+    else if (settingsModuleRef.current === 'trash') await load(dateRef.current, 'trash', 'bottom')
     requestAnimationFrame(() => inputRef.current?.focus())
   }
   useEffect(() => {
@@ -295,19 +307,7 @@ function App(): React.JSX.Element {
   useEffect(() => api.onClose(() => closeHandler.current()), [])
 
   function draftValidation(): MessageKey | null {
-    if (!draft.content.trim()) return 'empty'
-    if (Array.from(draft.content).length > 10000) return 'tooLong'
-    if (draft.pendingSubmission) {
-      return draft.pendingSubmission.recordedAt > clockTimestamp ? 'invalidTime' : null
-    }
-    if (draft.targetDate > clockDate) return 'invalidTime'
-    if (draft.timeMode === 'current-time' && draft.targetDate !== clockDate) return 'specifyTime'
-    if (
-      draft.timeMode === 'custom' &&
-      (draft.recordedAt === null || draft.recordedAt > clockTimestamp)
-    )
-      return 'invalidTime'
-    return null
+    return validateQuickNote(draftRef.current, clockTimestamp)
   }
   async function submit(submittedAt: number): Promise<void> {
     if (!ready || busyRef.current || editorRef.current || draftValidation()) return
@@ -351,7 +351,8 @@ function App(): React.JSX.Element {
     requestAnimationFrame(() => inputRef.current?.focus())
   }
   function beginEdit(log: Log): void {
-    protect(() =>
+    protect(() => {
+      editingIdRef.current = log.id
       assignEditor({
         log,
         content: log.content,
@@ -361,10 +362,17 @@ function App(): React.JSX.Element {
         touchedTime: false,
         error: null
       })
-    )
+    })
   }
   function modifyEditor(patch: Partial<Editor>): void {
     if (editorRef.current) assignEditor({ ...editorRef.current, ...patch, error: null })
+  }
+  function closeEditor(): void {
+    const id = editorRef.current?.log.id
+    protect(() => {
+      assignEditor(null)
+      requestAnimationFrame(() => document.getElementById(`more-${id}`)?.focus())
+    })
   }
   async function saveEdit(): Promise<boolean> {
     const edit = editorRef.current
@@ -447,20 +455,12 @@ function App(): React.JSX.Element {
       }
     }
   }
-  const wordCount = Array.from(draft.content).length
-  const invalid = draftValidation()
   const selectedLabel = new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     weekday: 'short'
   }).format(parseDay(date))
-  const count =
-    listState === 'loading'
-      ? '—'
-      : listState === 'error'
-        ? t('countUnavailable')
-        : t('count', { n: logs.length })
   const confirmKind = confirmation?.kind
   const confirmTitle: MessageKey =
     confirmKind === 'trash'
@@ -471,6 +471,18 @@ function App(): React.JSX.Element {
   const confirmHint: MessageKey =
     confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
   const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
+  const preferenceProps = {
+    locale,
+    preferences: prefs,
+    busy: preferenceBusy,
+    error: preferenceError,
+    onChange: (key: keyof Preferences, value: string): void => {
+      void changePreference(key, value)
+    },
+    onRetry: (): void => {
+      if (failedPreference) void changePreference(failedPreference.key, failedPreference.value)
+    }
+  }
 
   return (
     <div className={cn('window-shell', platform !== 'darwin' && 'other-platform')}>
@@ -491,6 +503,8 @@ function App(): React.JSX.Element {
                 date={date}
                 locale={locale}
                 label={selectedLabel}
+                showToday
+                max={clockDate}
                 disabled={busy}
                 onChange={dateChange}
               />
@@ -498,31 +512,14 @@ function App(): React.JSX.Element {
                 variant="ghost"
                 size="icon"
                 aria-label={t('next')}
-                disabled={busy}
+                disabled={busy || date >= clockDate}
                 onClick={() => dateChange(shiftDay(date, 1))}
               >
                 <ChevronRight />
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={date === clockDate || busy}
-                onClick={() => dateChange(today())}
-              >
-                {t('today')}
-              </Button>
-              <span className="note-count">{count}</span>
             </div>
             <div className="top-spacer" />
             <nav className="top-actions">
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => protect(() => navigate('trash'))}
-              >
-                <Trash2 data-icon="inline-start" />
-                {t('trash')}
-              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -540,28 +537,12 @@ function App(): React.JSX.Element {
             <Button
               variant="ghost"
               disabled={busy}
-              onClick={() => protect(() => navigate(view === 'settings' ? returnView : 'daily'))}
+              onClick={() => protect(() => navigate('daily'))}
             >
               <ArrowLeft data-icon="inline-start" />
               {t('back')}
             </Button>
-            <span className="top-title">{t(view === 'settings' ? 'settings' : 'trash')}</span>
-            {view === 'trash' && (
-              <>
-                <span className="note-count">{count}</span>
-                <div className="top-spacer" />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  id="settings-entry"
-                  aria-label={t('settings')}
-                  onClick={() => navigate('settings')}
-                  disabled={busy}
-                >
-                  <Settings />
-                </Button>
-              </>
-            )}
+            <span className="top-title">{t('settings')}</span>
           </>
         )}
       </header>
@@ -582,7 +563,7 @@ function App(): React.JSX.Element {
                 </Button>
               )}
               {notice.trash && (
-                <Button variant="link" size="sm" onClick={() => protect(() => navigate('trash'))}>
+                <Button variant="link" size="sm" onClick={() => selectSettingsModule('trash')}>
                   {t('trash')}
                 </Button>
               )}
@@ -612,389 +593,161 @@ function App(): React.JSX.Element {
           <Skeleton className="h-16" />
         </div>
       ) : view === 'settings' ? (
-        <div className="settings-layout">
-          <aside className="settings-menu">
-            <span className="menu-group">{t('application')}</span>
-            {(['general', 'appearance'] as const).map((module) => (
-              <Button
-                key={module}
-                variant={settingsModule === module ? 'secondary' : 'ghost'}
-                className="justify-start"
-                aria-current={settingsModule === module ? 'page' : undefined}
-                onClick={() => {
-                  setSettingsModule(module)
-                  settingsContentRef.current?.scrollTo({ top: 0 })
+        <SettingsPage
+          locale={locale}
+          active={settingsModule}
+          disabled={busy}
+          onChange={selectSettingsModule}
+          contents={{
+            general: <PreferenceContent module="general" {...preferenceProps} />,
+            appearance: <PreferenceContent module="appearance" {...preferenceProps} />,
+            trash: (
+              <TrashContent
+                listRef={listRef}
+                logs={logs}
+                state={listState}
+                locale={locale}
+                busy={busy}
+                onRetry={() => void load(date, 'trash', 'bottom')}
+                onRestore={(log) => void operate(log, 'restore')}
+                onDelete={(log) => {
+                  setConfirmError(null)
+                  setConfirmation({ kind: 'delete', log })
                 }}
-              >
-                {t(module)}
-              </Button>
-            ))}
-          </aside>
-          <main ref={settingsContentRef} className="settings-content">
-            <h1>{t(settingsModule)}</h1>
-            <section className="settings-section">
-              <h2>{t(settingsModule === 'general' ? 'interface' : 'appearance')}</h2>
-              <div className="settings-row">
-                <Field orientation="horizontal">
-                  <FieldLabel htmlFor="preference">
-                    {t(settingsModule === 'general' ? 'language' : 'theme')}
-                  </FieldLabel>
-                  <Select
-                    value={settingsModule === 'general' ? locale : prefs.themeMode}
-                    disabled={preferenceBusy}
-                    onValueChange={(value) => {
-                      if (value)
-                        void changePreference(
-                          settingsModule === 'general' ? 'localePreference' : 'themeMode',
-                          value
-                        )
-                    }}
-                  >
-                    <SelectTrigger id="preference" className="min-w-36">
-                      <SelectValue>
-                        {settingsModule === 'general'
-                          ? languages.find((l) => l.code === locale)?.name
-                          : t(prefs.themeMode)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {settingsModule === 'general'
-                          ? languages.map((language) => (
-                              <SelectItem key={language.code} value={language.code}>
-                                {language.name}
-                              </SelectItem>
-                            ))
-                          : (['light', 'dark', 'system'] as const).map((mode) => (
-                              <SelectItem key={mode} value={mode}>
-                                {t(mode)}
-                              </SelectItem>
-                            ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              {preferenceError && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    {t('preferenceError')}
-                    <Button
-                      variant="link"
-                      onClick={() => {
-                        if (failedPreference)
-                          void changePreference(failedPreference.key, failedPreference.value)
-                      }}
-                    >
-                      {t('retry')}
-                    </Button>
-                  </AlertDescription>
-                </Alert>
-              )}
-            </section>
-          </main>
-        </div>
-      ) : (
-        <>
-          <main ref={listRef} className="notes-scroll" aria-busy={listState === 'loading'}>
-            <div className="notes-content">
-              {listState === 'loading' ? (
-                <div className="loading-notes">
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                  <Skeleton className="h-16" />
-                </div>
-              ) : listState === 'error' ? (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>{t(view === 'trash' ? 'trashError' : 'readError')}</EmptyTitle>
-                  </EmptyHeader>
-                  <Button onClick={() => void load(date, view, 'bottom')}>{t('retry')}</Button>
-                </Empty>
-              ) : logs.length === 0 ? (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {t(
-                        view === 'trash'
-                          ? 'emptyTrash'
-                          : date > clockDate
-                            ? 'future'
-                            : date === clockDate
-                              ? 'emptyToday'
-                              : 'emptyDay'
-                      )}
-                    </EmptyTitle>
-                    {view === 'daily' && date <= clockDate && (
-                      <EmptyDescription>{t('emptyHint')}</EmptyDescription>
-                    )}
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                logs.map((log) => (
-                  <article className="note-row" id={`note-${log.id}`} key={log.id}>
-                    <div className="note-time">
-                      <time>{timeText(log.recordedAt, log.timeZone)}</time>
-                      {view === 'trash' && <span>{log.localDate}</span>}
-                    </div>
-                    <div className="note-content">
-                      <div className="note-meta">
-                        <span>
-                          {t(
-                            log.type === 'manual'
-                              ? 'note'
-                              : log.type === 'todo'
-                                ? 'todo'
-                                : log.type === 'schedule'
-                                  ? 'schedule'
-                                  : 'other'
-                          )}
-                        </span>
-                        {view === 'daily' && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={t('more')}
-                                  id={`more-${log.id}`}
-                                  disabled={busy}
-                                />
-                              }
-                            >
-                              <MoreHorizontal />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuGroup>
-                                {log.type === 'manual' && (
-                                  <DropdownMenuItem onClick={() => beginEdit(log)}>
-                                    {t('edit')}
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() =>
-                                    protect(() => {
-                                      setConfirmError(null)
-                                      setConfirmation({ kind: 'trash', log })
-                                    })
-                                  }
-                                >
-                                  {t('moveTrash')}
-                                </DropdownMenuItem>
-                              </DropdownMenuGroup>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                      {editor?.log.id === log.id ? (
-                        <FieldGroup className="inline-editor">
-                          <Field
-                            data-invalid={editor.error === 'empty' || editor.error === 'too-long'}
-                          >
-                            <FieldLabel htmlFor="edit-content" className="sr-only">
-                              {t('content')}
-                            </FieldLabel>
-                            <Textarea
-                              id="edit-content"
-                              autoFocus
-                              value={editor.content}
-                              disabled={busy}
-                              onChange={(event) => modifyEditor({ content: event.target.value })}
-                              aria-invalid={editor.error === 'empty' || editor.error === 'too-long'}
-                              rows={5}
-                            />
-                          </Field>
-                          <div className="time-controls">
-                            <Field className="w-auto">
-                              <FieldLabel>{t('date')}</FieldLabel>
-                              <DatePicker
-                                date={editor.date}
-                                locale={locale}
-                                label={editor.date}
-                                disabled={busy}
-                                max={clockDate}
-                                onChange={(value) =>
-                                  modifyEditor({ date: value, current: false, touchedTime: true })
-                                }
-                              />
-                            </Field>
-                            <Field className="w-auto">
-                              <FieldLabel htmlFor="edit-time">{t('time')}</FieldLabel>
-                              <Input
-                                id="edit-time"
-                                type="time"
-                                value={editor.time}
-                                className="w-32"
-                                disabled={busy || editor.current}
-                                onChange={(event) =>
-                                  modifyEditor({
-                                    time: event.target.value,
-                                    current: false,
-                                    touchedTime: true
-                                  })
-                                }
-                              />
-                            </Field>
-                            <Button
-                              variant="outline"
-                              disabled={busy}
-                              onClick={() => modifyEditor({ current: !editor.current })}
-                              aria-pressed={editor.current}
-                            >
-                              {t('useCurrent')}
-                            </Button>
-                            <span className="text-xs text-muted-foreground">
-                              {editor.log.timeZone}
-                            </span>
-                          </div>
-                          {editor.error && <FieldError>{t(errorKey(editor.error))}</FieldError>}
-                          <div className="flex gap-2">
-                            <Button
-                              disabled={
-                                busy ||
-                                !editor.content.trim() ||
-                                Array.from(editor.content).length > 10000
-                              }
-                              onClick={() => void saveEdit()}
-                            >
-                              {t(busy ? 'saving' : 'saveChanges')}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                protect(() => {
-                                  assignEditor(null)
-                                  requestAnimationFrame(() =>
-                                    document.getElementById(`more-${log.id}`)?.focus()
-                                  )
-                                })
-                              }
-                            >
-                              {t('cancel')}
-                            </Button>
-                          </div>
-                        </FieldGroup>
-                      ) : (
-                        <NoteBody content={log.content} locale={locale} />
-                      )}
-                      {view === 'trash' && (
-                        <div className="trash-actions">
-                          <span>
-                            {t('trashedAt')} ·{' '}
-                            {new Intl.DateTimeFormat(locale, {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                              hourCycle: 'h23',
-                              timeZone: log.timeZone
-                            }).format(log.updatedAt)}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void operate(log, 'restore')}
-                          >
-                            {t('restore')}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => {
-                              setConfirmError(null)
-                              setConfirmation({ kind: 'delete', log })
-                            }}
-                          >
-                            {t('delete')}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </main>
-          {view === 'daily' && (date <= clockDate || draft.content) && (
-            <NoteComposer
-              context={
-                <DateTimePicker
-                  value={draft}
-                  locale={locale}
-                  now={clockTimestamp}
-                  disabled={
-                    busy ||
-                    !!editor ||
-                    !ready ||
-                    (draft.pendingSubmission !== null && !pendingEditable)
-                  }
-                  onChange={updateDraft}
-                />
-              }
-              status={
-                wordCount >= 9000 ? (
-                  <span className="composer-length">{t('length', { n: wordCount })}</span>
-                ) : null
-              }
-              error={
-                saveError || (draft.content && invalid && invalid !== 'empty')
-                  ? t(saveError ? errorKey(saveError) : invalid!)
-                  : null
-              }
-              actionLabel={t(
-                busy
-                  ? 'saving'
-                  : saveError
-                    ? 'retry'
-                    : draft.targetDate === clockDate
-                      ? 'record'
-                      : 'backfill'
-              )}
-              busy={busy}
-              disabled={busy || !!editor || !!invalid}
-              onSubmit={() => void submit(Date.now())}
-            >
-              <label htmlFor="new-content" className="sr-only">
-                {t('content')}
-              </label>
-              <textarea
-                ref={inputRef}
-                id="new-content"
-                value={draft.content}
-                placeholder={t('placeholder')}
-                disabled={
-                  busy ||
-                  !!editor ||
-                  !ready ||
-                  (draft.pendingSubmission !== null && !pendingEditable)
-                }
-                aria-invalid={wordCount > 10000}
-                onChange={(event) => updateDraft({ content: event.target.value })}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    (event.metaKey || event.ctrlKey) &&
-                    !event.nativeEvent.isComposing &&
-                    event.nativeEvent.keyCode !== 229
-                  ) {
-                    event.preventDefault()
-                    void submit(Date.now())
-                  }
-                }}
-                className="composer-textarea"
-                aria-describedby={
-                  saveError || (draft.content && invalid && invalid !== 'empty')
-                    ? 'composer-error'
-                    : undefined
-                }
               />
-            </NoteComposer>
-          )}
-        </>
+            )
+          }}
+        />
+      ) : (
+        <HomePage
+          listRef={listRef}
+          loading={listState === 'loading'}
+          notes={
+            <NotesList
+              logs={logs}
+              state={listState}
+              locale={locale}
+              busy={busy}
+              emptyTitle={
+                date > clockDate ? 'future' : date === clockDate ? 'emptyToday' : 'emptyDay'
+              }
+              emptyHint={date <= clockDate}
+              onRetry={() => void load(date, 'daily', 'bottom')}
+              onEdit={beginEdit}
+              onTrash={(log) =>
+                protect(() => {
+                  setConfirmError(null)
+                  setConfirmation({ kind: 'trash', log })
+                })
+              }
+            />
+          }
+          composer={
+            (date <= clockDate || draft.content) && (
+              <QuickNoteModule
+                value={draft}
+                locale={locale}
+                now={clockTimestamp}
+                ready={ready}
+                busy={busy}
+                blocked={!!editor}
+                pendingEditable={pendingEditable}
+                error={saveError}
+                inputRef={inputRef}
+                onChange={updateDraft}
+                onSubmit={() => void submit(Date.now())}
+              />
+            )
+          }
+        />
       )}
+      <Dialog
+        open={!!editor}
+        disablePointerDismissal={busy || !!confirmation}
+        onOpenChange={(open) => {
+          if (!open && !confirmation) closeEditor()
+        }}
+      >
+        <DialogContent
+          className="note-edit-dialog max-h-[85dvh] overflow-y-auto sm:max-w-xl"
+          showCloseButton={false}
+          initialFocus={editInputRef}
+          finalFocus={() =>
+            document.getElementById(`more-${editingIdRef.current}`) ?? inputRef.current
+          }
+        >
+          <DialogHeader>
+            <DialogTitle>{t('edit')}</DialogTitle>
+          </DialogHeader>
+          {editor && (
+            <FieldGroup>
+              <Field data-invalid={editor.error === 'empty' || editor.error === 'too-long'}>
+                <FieldLabel htmlFor="edit-content">{t('content')}</FieldLabel>
+                <Textarea
+                  ref={editInputRef}
+                  id="edit-content"
+                  className="note-edit-textarea"
+                  value={editor.content}
+                  disabled={busy}
+                  onChange={(event) => modifyEditor({ content: event.target.value })}
+                  aria-invalid={editor.error === 'empty' || editor.error === 'too-long'}
+                  rows={8}
+                />
+              </Field>
+              <div className="time-controls">
+                <Field className="w-auto">
+                  <FieldLabel>{t('date')}</FieldLabel>
+                  <DatePicker
+                    date={editor.date}
+                    locale={locale}
+                    label={editor.date}
+                    disabled={busy}
+                    max={clockDate}
+                    onChange={(value) =>
+                      modifyEditor({ date: value, current: false, touchedTime: true })
+                    }
+                  />
+                </Field>
+                <Field className="w-auto">
+                  <FieldLabel htmlFor="edit-time">{t('time')}</FieldLabel>
+                  <Input
+                    id="edit-time"
+                    type="time"
+                    value={editor.time}
+                    className="w-32"
+                    disabled={busy || editor.current}
+                    onChange={(event) =>
+                      modifyEditor({ time: event.target.value, current: false, touchedTime: true })
+                    }
+                  />
+                </Field>
+                <Button
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => modifyEditor({ current: !editor.current })}
+                  aria-pressed={editor.current}
+                >
+                  {t('useCurrent')}
+                </Button>
+              </div>
+              {editor.error && <FieldError>{t(errorKey(editor.error))}</FieldError>}
+            </FieldGroup>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={closeEditor}>
+              {t('cancel')}
+            </Button>
+            <Button
+              disabled={
+                busy || !editor?.content.trim() || Array.from(editor?.content ?? '').length > 10000
+              }
+              onClick={() => void saveEdit()}
+            >
+              {t(busy ? 'saving' : 'saveChanges')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={!!confirmation}
         onOpenChange={(open) => {

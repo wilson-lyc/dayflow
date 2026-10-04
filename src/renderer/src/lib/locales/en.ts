@@ -1,5 +1,6 @@
 export const en = {
   today: 'Today',
+  returnToday: 'Back to today',
   previous: 'Previous day',
   next: 'Next day',
   trash: 'Trash',
@@ -73,7 +74,8 @@ export const en = {
   empty: 'Enter a note',
   tooLong: 'Use no more than 10,000 characters',
   invalidTime: 'Choose a valid time that is not in the future',
-  specifyTime: 'Choose a time for this past date',
+  specifyTime: 'Choose a time',
+  resizeComposer: 'Resize input',
   operationError: 'Unable to save changes. Your content is still here',
   stateError: 'This note is no longer available. Reload and try again',
   versionError: 'This data version is not supported by this app',

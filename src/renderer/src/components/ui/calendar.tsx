@@ -2,10 +2,25 @@
 
 import * as React from 'react'
 import { cn } from 'cn'
-import { DayPicker, getDefaultClassNames, type DayButton, type Locale } from 'react-day-picker'
+import {
+  DayPicker,
+  getDefaultClassNames,
+  type DayButton,
+  type Locale,
+  type Root
+} from 'react-day-picker'
 
 import { Button, buttonVariants } from '@renderer/components/ui/button'
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from 'lucide-react'
+
+// Keep the root stable so clock updates don't remount open native dropdowns.
+function CalendarRoot({
+  className,
+  rootRef,
+  ...props
+}: React.ComponentProps<typeof Root>): React.JSX.Element {
+  return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />
+}
 
 function Calendar({
   className,
@@ -113,9 +128,7 @@ function Calendar({
         ...classNames
       }}
       components={{
-        Root: ({ className, rootRef, ...props }) => {
-          return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />
-        },
+        Root: CalendarRoot,
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === 'left') {
             return <ChevronLeftIcon className={cn('size-4', className)} {...props} />

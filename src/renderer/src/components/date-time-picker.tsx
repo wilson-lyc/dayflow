@@ -36,7 +36,9 @@ export function DateTimePicker({
   const label =
     value.timeMode === 'current-time'
       ? t('now')
-      : `${value.targetDate} ${value.recordedAt === null ? t('specifyTime') : timeText(value.recordedAt, zone)}`
+      : value.recordedAt === null
+        ? t('specifyTime')
+        : `${value.targetDate} ${timeText(value.recordedAt, zone)}`
 
   function changeOpen(next: boolean): void {
     if (next && disabled) return

@@ -1,6 +1,7 @@
 import type { MessageKey } from '../i18n'
 export const zh: Record<MessageKey, string> = {
   today: '今天',
+  returnToday: '返回今天',
   previous: '前一天',
   next: '后一天',
   trash: '回收站',
@@ -74,7 +75,8 @@ export const zh: Record<MessageKey, string> = {
   empty: '请输入正文',
   tooLong: '正文不能超过 10,000 个字符',
   invalidTime: '请选择有效且不晚于当前的时间',
-  specifyTime: '请指定补记时间',
+  specifyTime: '请选择时间',
+  resizeComposer: '调整输入框高度',
   operationError: '保存失败，内容已保留',
   stateError: '记录状态已变更，请重新加载后重试',
   versionError: '当前应用不支持此数据版本',

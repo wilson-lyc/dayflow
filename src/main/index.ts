@@ -9,7 +9,7 @@ let mainWindow: BrowserWindow | null = null
 let allowClose = false
 let quitting = false
 function background(): string {
-  return nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#ffffff'
+  return nativeTheme.shouldUseDarkColors ? '#181818' : '#ffffff'
 }
 function createWindow(): void {
   allowClose = false
@@ -28,7 +28,7 @@ function createWindow(): void {
       ? {
           titleBarOverlay: {
             color: background(),
-            symbolColor: nativeTheme.shouldUseDarkColors ? '#fafafa' : '#0a0a0a',
+            symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0a0a0a',
             height: 64
           }
         }
@@ -124,7 +124,7 @@ else {
       if (process.platform !== 'darwin')
         mainWindow?.setTitleBarOverlay({
           color: background(),
-          symbolColor: nativeTheme.shouldUseDarkColors ? '#fafafa' : '#0a0a0a'
+          symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0a0a0a'
         })
       mainWindow?.webContents.send('dayflow:system-theme', nativeTheme.shouldUseDarkColors)
     })
