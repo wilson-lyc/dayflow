@@ -1,6 +1,11 @@
 import { useId } from 'react'
-import type { Locale, Preferences } from '../../../shared/model'
-import { translator, languages } from '../lib/i18n'
+import {
+  reportAutoSaveIntervals,
+  type ReportAutoSaveInterval,
+  type Locale,
+  type Preferences
+} from '../../../shared/model'
+import { translator, languages, type MessageKey } from '../lib/i18n'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Field, FieldLabel } from './ui/field'
@@ -12,6 +17,14 @@ import {
   SelectTrigger,
   SelectValue
 } from './ui/select'
+
+const autoSaveLabels: Record<ReportAutoSaveInterval, MessageKey> = {
+  off: 'autoSaveOff',
+  '10': 'autoSave10',
+  '30': 'autoSave30',
+  '60': 'autoSave60',
+  '300': 'autoSave300'
+}
 
 export function PreferenceContent({
   module,
@@ -70,6 +83,36 @@ export function PreferenceContent({
           </Select>
         </Field>
       </div>
+      {module === 'general' && (
+        <>
+          <h2>{t('report')}</h2>
+          <div className="settings-row">
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor={`${id}-autosave`}>{t('reportAutoSave')}</FieldLabel>
+              <Select
+                value={preferences.reportAutoSaveInterval}
+                disabled={busy}
+                onValueChange={(value) => {
+                  if (value) onChange('reportAutoSaveInterval', value)
+                }}
+              >
+                <SelectTrigger id={`${id}-autosave`} className="min-w-36">
+                  <SelectValue>{t(autoSaveLabels[preferences.reportAutoSaveInterval])}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {reportAutoSaveIntervals.map((interval) => (
+                      <SelectItem key={interval} value={interval}>
+                        {t(autoSaveLabels[interval])}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </>
+      )}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>

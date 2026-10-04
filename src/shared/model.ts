@@ -22,9 +22,15 @@ export interface CreateLog extends Submission {
   content: string
   targetDate: string
 }
+export const reportAutoSaveIntervals = ['off', '10', '30', '60', '300'] as const
+export type ReportAutoSaveInterval = (typeof reportAutoSaveIntervals)[number]
+export function isReportAutoSaveInterval(value: unknown): value is ReportAutoSaveInterval {
+  return reportAutoSaveIntervals.some((interval) => interval === value)
+}
 export interface Preferences {
   themeMode: ThemeMode
   localePreference: string | null
+  reportAutoSaveInterval: ReportAutoSaveInterval
 }
 export type ErrorCode = 'storage' | 'empty' | 'too-long' | 'time' | 'state' | 'version'
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode }

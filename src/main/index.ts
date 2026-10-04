@@ -28,7 +28,7 @@ function createWindow(): void {
       ? {
           titleBarOverlay: {
             color: background(),
-            symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0a0a0a',
+            symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0d0d0d',
             height: 64
           }
         }
@@ -124,7 +124,7 @@ else {
       if (process.platform !== 'darwin')
         mainWindow?.setTitleBarOverlay({
           color: background(),
-          symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0a0a0a'
+          symbolColor: nativeTheme.shouldUseDarkColors ? '#ffffff' : '#0d0d0d'
         })
       mainWindow?.webContents.send('dayflow:system-theme', nativeTheme.shouldUseDarkColors)
     })

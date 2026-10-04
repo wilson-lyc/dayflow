@@ -23,6 +23,9 @@ import {
   AlertDialogFooter
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
+import { DailyReportEditor } from './components/daily-report-editor'
+import { DailyReportPage } from './components/daily-report-page'
+import { useDailyReport } from './hooks/use-daily-report'
 import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
 import { PreferenceContent } from './components/preference-content'
@@ -47,7 +50,7 @@ import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
 import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
 
-type View = 'daily' | 'settings'
+type View = 'daily' | 'report' | 'settings'
 type ListScope = 'daily' | 'trash'
 type Editor = {
   log: Log
@@ -65,7 +68,11 @@ const api = window.api
 function App(): React.JSX.Element {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(null, navigator.languages))
   const t = translator(locale)
-  const [prefs, setPrefs] = useState<Preferences>({ themeMode: 'system', localePreference: null })
+  const [prefs, setPrefs] = useState<Preferences>({
+    themeMode: 'system',
+    localePreference: null,
+    reportAutoSaveInterval: 'off'
+  })
   const [platform, setPlatform] = useState('darwin')
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<ErrorCode | null>(null)
@@ -75,6 +82,9 @@ function App(): React.JSX.Element {
   const settingsModuleRef = useRef<SettingsModule>('general')
   const [date, setDate] = useState(today)
   const dateRef = useRef(date)
+  const report = useDailyReport(date, prefs.reportAutoSaveInterval)
+  const saveReport = report.save
+  const [reportCloseOpen, setReportCloseOpen] = useState(false)
   const [clockTimestamp, setClockTimestamp] = useState(Date.now)
   const clockDate = localDate(clockTimestamp, systemZone())
   const [logs, setLogs] = useState<Log[]>([])
@@ -171,7 +181,7 @@ function App(): React.JSX.Element {
     selected = dateRef.current,
     target: string | 'bottom' = 'bottom'
   ): void {
-    if (page === 'settings') {
+    if (page !== 'daily') {
       loadId.current++
     }
     if (viewRef.current === 'settings' && page !== 'settings') {
@@ -188,7 +198,7 @@ function App(): React.JSX.Element {
     if (page === 'daily') {
       restoreTrashScroll.current = false
       void load(selected, 'daily', target)
-    } else if (settingsModuleRef.current === 'trash') {
+    } else if (page === 'settings' && settingsModuleRef.current === 'trash') {
       restoreTrashScroll.current = true
       void load(selected, 'trash', 'bottom')
     }
@@ -301,10 +311,30 @@ function App(): React.JSX.Element {
         deferredClose.current = true
         return
       }
-      protect(() => api.finishClose())
+      protect(() => {
+        if (report.hasUnsaved) setReportCloseOpen(true)
+        else api.finishClose()
+      })
     }
   })
   useEffect(() => api.onClose(() => closeHandler.current()), [])
+  useEffect(() => {
+    const saveShortcut = (event: KeyboardEvent): void => {
+      if (
+        event.key.toLowerCase() !== 's' ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        viewRef.current === 'settings'
+      )
+        return
+      event.preventDefault()
+      if (!busyRef.current && !editorRef.current && !confirmation && !reportCloseOpen) saveReport()
+    }
+    window.addEventListener('keydown', saveShortcut)
+    return () => window.removeEventListener('keydown', saveShortcut)
+  }, [saveReport, confirmation, reportCloseOpen])
 
   function draftValidation(): MessageKey | null {
     return validateQuickNote(draftRef.current, clockTimestamp)
@@ -470,7 +500,15 @@ function App(): React.JSX.Element {
         : 'unsaved'
   const confirmHint: MessageKey =
     confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
-  const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
+  const dateChange = (selected: string): void =>
+    protect(() => navigate(viewRef.current === 'report' ? 'report' : 'daily', selected))
+  const reportProps = {
+    ...report,
+    onRetry: report.retry,
+    onSave: report.save,
+    locale,
+    disabled: busy
+  }
   const preferenceProps = {
     locale,
     preferences: prefs,
@@ -487,7 +525,7 @@ function App(): React.JSX.Element {
   return (
     <div className={cn('window-shell', platform !== 'darwin' && 'other-platform')}>
       <header className="window-top">
-        {view === 'daily' ? (
+        {view !== 'settings' ? (
           <>
             <div className="date-navigation">
               <Button
@@ -520,6 +558,14 @@ function App(): React.JSX.Element {
             </div>
             <div className="top-spacer" />
             <nav className="top-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => protect(() => navigate(view === 'report' ? 'daily' : 'report'))}
+              >
+                {t(view === 'report' ? 'home' : 'report')}
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -618,8 +664,12 @@ function App(): React.JSX.Element {
             )
           }}
         />
+      ) : view === 'report' ? (
+        <DailyReportPage date={date} {...reportProps} />
       ) : (
         <HomePage
+          resizeLabel={t('resizeNotesReport')}
+          report={<DailyReportEditor {...reportProps} />}
           listRef={listRef}
           loading={listState === 'loading'}
           notes={
@@ -748,6 +798,57 @@ function App(): React.JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={reportCloseOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReportCloseOpen(false)
+            api.cancelClose()
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('reportCloseTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('reportCloseHint')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {report.error === 'save' && (
+            <Alert variant="destructive">
+              <AlertDescription>{t('operationError')}</AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReportCloseOpen(false)
+                api.cancelClose()
+              }}
+            >
+              {t('continueEditing')}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setReportCloseOpen(false)
+                api.finishClose()
+              }}
+            >
+              {t('discard')}
+            </Button>
+            <Button
+              onClick={() => {
+                if (report.saveAll()) {
+                  setReportCloseOpen(false)
+                  api.finishClose()
+                }
+              }}
+            >
+              {t('reportSaveAndClose')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!confirmation}
         onOpenChange={(open) => {
