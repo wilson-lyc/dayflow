@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { app, nativeTheme } from 'electron'
 import {
   localDate,
+  isReportAutoSaveInterval,
   validDate,
   type CreateLog,
   type Log,
@@ -162,13 +163,17 @@ export function preferences(): Preferences {
     themeMode: ['light', 'dark', 'system'].includes(String(values.themeMode))
       ? (values.themeMode as Preferences['themeMode'])
       : 'system',
-    localePreference: typeof values.localePreference === 'string' ? values.localePreference : null
+    localePreference: typeof values.localePreference === 'string' ? values.localePreference : null,
+    reportAutoSaveInterval: isReportAutoSaveInterval(values.reportAutoSaveInterval)
+      ? values.reportAutoSaveInterval
+      : 'off'
   }
 }
 export function preference(key: keyof Preferences, value: string): Preferences {
   if (
     !(key === 'themeMode' && ['light', 'dark', 'system'].includes(value)) &&
-    !(key === 'localePreference' && isLocale(value))
+    !(key === 'localePreference' && isLocale(value)) &&
+    !(key === 'reportAutoSaveInterval' && isReportAutoSaveInterval(value))
   )
     throw new ServiceError('state')
   const previous = preferences()
@@ -182,7 +187,11 @@ export function preference(key: keyof Preferences, value: string): Preferences {
 }
 export function bootstrap(): Bootstrap {
   database()
-  let prefs: Preferences = { themeMode: 'system', localePreference: null }
+  let prefs: Preferences = {
+    themeMode: 'system',
+    localePreference: null,
+    reportAutoSaveInterval: 'off'
+  }
   let preferenceError = false
   try {
     prefs = preferences()
