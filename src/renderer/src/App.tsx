@@ -669,7 +669,7 @@ function App(): React.JSX.Element {
       ) : (
         <HomePage
           resizeLabel={t('resizeNotesReport')}
-          report={<DailyReportEditor {...reportProps} />}
+          report={<DailyReportEditor {...reportProps} showTitle={false} />}
           listRef={listRef}
           loading={listState === 'loading'}
           notes={

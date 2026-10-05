@@ -307,6 +307,14 @@ textarea,
   max-height: none;
   field-sizing: fixed;
 }
+.composer-resize,
+.split-resize-indicator {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  opacity: 0;
+  transition: opacity 150ms;
+}
 .composer-resize {
   position: absolute;
   top: -2.5px;
@@ -315,19 +323,16 @@ textarea,
   height: 5px;
   padding: 0;
   transform: translateX(-50%);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--background);
   cursor: ns-resize;
   touch-action: none;
-  opacity: 0;
-  transition: opacity 150ms;
 }
-.dark .composer-resize {
+.dark .composer-resize,
+.dark .split-resize-indicator {
   background: var(--muted-foreground);
   border-color: transparent;
 }
-.dark .composer-resize:hover {
+.dark .composer-resize:hover,
+.dark .split-handle:hover .split-resize-indicator {
   background: var(--foreground);
 }
 .composer-surface:hover .composer-resize,
@@ -542,21 +547,42 @@ textarea,
   height: 100%;
 }
 .split-handle {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 8px;
-  background: var(--muted);
-  color: var(--muted-foreground);
+  background: transparent;
+  cursor: ew-resize;
   touch-action: none;
   -webkit-app-region: no-drag;
 }
-.split-handle:hover,
-.split-handle:focus-visible,
-.split-handle[data-separator='active'] {
-  background: var(--accent);
+.split-handle::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 0.5px);
+  width: 1px;
+  background: var(--border);
+  content: '';
+}
+.split-resize-indicator {
+  position: relative;
+  width: 5px;
+  height: 64px;
+  pointer-events: none;
+}
+.split-handle:hover .split-resize-indicator,
+.split-handle:focus-visible .split-resize-indicator,
+.split-handle[data-separator='active'] .split-resize-indicator {
+  opacity: 1;
+}
+.split-handle:focus-visible {
+  outline: none;
+}
+.split-handle:focus-visible .split-resize-indicator {
   outline: 2px solid var(--ring);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 .report-editor,
 .report-preview {
@@ -607,6 +633,18 @@ textarea,
 }
 .report-code-editor .cm-editor {
   height: 100%;
+}
+.report-status-bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 2px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
 }
 .report-preview-content {
   flex: 1;

@@ -10,7 +10,8 @@ import {
   ListTodo,
   Link,
   Quote,
-  Code
+  Code,
+  Save
 } from 'lucide-react'
 import type { Locale } from '../../../shared/model'
 import { translator } from '../lib/i18n'
@@ -24,6 +25,7 @@ export type DailyReportEditorProps = {
   onSave: () => void
   error?: 'read' | 'save' | null
   actions?: ReactNode
+  showTitle?: boolean
   onChange: (content: string) => void
   onRetry?: () => void
 }
@@ -113,6 +115,7 @@ export function DailyReportEditor({
   onSave,
   error,
   actions,
+  showTitle = true,
   onChange,
   onRetry
 }: DailyReportEditorProps): React.JSX.Element {
@@ -137,24 +140,12 @@ export function DailyReportEditor({
 
   return (
     <section className="report-editor" aria-label={t('reportEdit')}>
-      <div className="report-toolbar">
-        <span className="font-medium">{t('report')}</span>
-        <div className="report-actions">
-          <span className="report-save-status" role="status">
-            {t(dirty ? 'reportUnsaved' : 'reportSaved')}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={locked || !dirty}
-            title={t('reportSaveShortcut')}
-            onClick={onSave}
-          >
-            {t('save')}
-          </Button>
-          {actions}
+      {(showTitle || actions) && (
+        <div className="report-toolbar">
+          {showTitle && <span className="font-medium">{t('report')}</span>}
+          <div className="report-actions">{actions}</div>
         </div>
-      </div>
+      )}
       {error && (
         <div className="report-error" role="alert">
           <span>{t(error === 'read' ? 'reportReadError' : 'operationError')}</span>
@@ -182,6 +173,17 @@ export function DailyReportEditor({
               <format.icon />
             </Button>
           ))}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto"
+            aria-label={t('save')}
+            title={t('reportSaveShortcut')}
+            disabled={locked || !dirty}
+            onClick={onSave}
+          >
+            <Save data-icon="inline-start" />
+          </Button>
         </div>
         <CodeMirror
           ref={editor}
@@ -197,6 +199,11 @@ export function DailyReportEditor({
           basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLineGutter: false }}
           onChange={onChange}
         />
+        <div className="report-status-bar">
+          <span className="report-save-status" role="status">
+            {t(dirty ? 'reportUnsaved' : 'reportSaved')}
+          </span>
+        </div>
       </div>
     </section>
   )

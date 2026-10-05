@@ -1,6 +1,5 @@
 import type { ComponentProps } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { GripVertical } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 function ResizablePanelGroup({
@@ -26,7 +25,7 @@ function ResizableHandle({
 }: ComponentProps<typeof Separator>): React.JSX.Element {
   return (
     <Separator data-slot="resizable-handle" className={cn('split-handle', className)} {...props}>
-      <GripVertical aria-hidden="true" className="size-3" />
+      <span aria-hidden="true" className="split-resize-indicator" />
     </Separator>
   )
 }
