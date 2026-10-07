@@ -1,5 +1,5 @@
 import { useId, type Ref } from 'react'
-import type { ErrorCode, Locale } from '../../../shared/model'
+import type { ErrorCode, Locale, NoteEnterAction } from '../../../shared/model'
 import { localDate } from '../../../shared/model'
 import { systemZone, type Draft } from '../lib/dates'
 import { translator, errorKey } from '../lib/i18n'
@@ -8,6 +8,7 @@ import { DateTimePicker } from './date-time-picker'
 import { NoteComposer } from './note-composer'
 
 export type QuickNoteModuleProps = {
+  enterAction: NoteEnterAction
   value: Draft
   locale: Locale
   now: number
@@ -22,6 +23,7 @@ export type QuickNoteModuleProps = {
 }
 
 export function QuickNoteModule({
+  enterAction,
   value,
   locale,
   now,
@@ -92,13 +94,25 @@ export function QuickNoteModule({
         onChange={(event) => onChange({ content: event.target.value })}
         onKeyDown={(event) => {
           if (
-            event.key === 'Enter' &&
-            (event.metaKey || event.ctrlKey) &&
-            !event.nativeEvent.isComposing &&
-            event.nativeEvent.keyCode !== 229
-          ) {
+            event.key !== 'Enter' ||
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229 ||
+            event.altKey ||
+            event.shiftKey
+          )
+            return
+          const modified = event.metaKey || event.ctrlKey
+          const shouldSend = enterAction === 'send' ? !modified : modified
+          if (shouldSend) {
             event.preventDefault()
-            if (!sendDisabled) onSubmit()
+            if (!sendDisabled && !event.repeat) onSubmit()
+          } else if (modified) {
+            event.preventDefault()
+            const input = event.currentTarget
+            const start = input.selectionStart
+            const end = input.selectionEnd
+            onChange({ content: value.content.slice(0, start) + '\n' + value.content.slice(end) })
+            requestAnimationFrame(() => input.setSelectionRange(start + 1, start + 1))
           }
         }}
         className="composer-textarea"

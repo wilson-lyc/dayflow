@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { app, nativeTheme } from 'electron'
 import {
   localDate,
@@ -10,21 +11,49 @@ import {
   type Log,
   type Preferences,
   type Bootstrap,
-  type ErrorCode
+  type ReportWrite
 } from '../shared/model'
 
 import { isLocale, resolveLocale } from '../shared/languages'
+import { DataDirectory, ServiceError } from './data-directory'
+export { ServiceError } from './data-directory'
 
-export class ServiceError extends Error {
-  constructor(public code: ErrorCode) {
-    super(code)
-  }
+let data: DataDirectory | undefined
+function dataFiles(): DataDirectory {
+  if (!data) data = new DataDirectory(app.getPath('home'), app.getPath('userData'))
+  data.ensureAvailable()
+  return data
+}
+export function dataDirectory(): string {
+  return dataFiles().root
 }
 let db: DatabaseSync | undefined
 function database(): DatabaseSync {
-  if (db) return db
-  const path = join(app.getPath('userData'), 'data', 'dayflow.sqlite')
-  mkdirSync(dirname(path), { recursive: true })
+  const storage = dataFiles()
+  const path = join(storage.root, 'dayflow.sqlite')
+  if (db) {
+    if (!existsSync(path)) throw new ServiceError('storage')
+    return db
+  }
+  if (storage.configured && !existsSync(path)) throw new ServiceError('storage')
+  const legacy = join(app.getPath('userData'), 'data', 'dayflow.sqlite')
+  if (!storage.configured && !existsSync(path) && existsSync(legacy)) {
+    const old = new DatabaseSync(legacy)
+    try {
+      const result = old.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+      if (Number(result?.busy) !== 0) throw new ServiceError('storage')
+    } finally {
+      old.close()
+    }
+    const temporary = join(storage.root, `.legacy-database-${randomUUID()}.tmp`)
+    try {
+      copyFileSync(legacy, temporary, constants.COPYFILE_EXCL)
+      if (!readFileSync(legacy).equals(readFileSync(temporary))) throw new ServiceError('storage')
+      renameSync(temporary, path)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
+  }
   const candidate = new DatabaseSync(path)
   try {
     const hasMigrations = candidate
@@ -63,6 +92,7 @@ function database(): DatabaseSync {
         'SELECT id,type,content,recorded_at,time_zone,local_date,created_at,updated_at,is_deleted FROM logs LIMIT 0'
       )
       .all()
+    storage.remember()
     db = candidate
     return db
   } catch (error) {
@@ -160,6 +190,7 @@ export function preferences(): Preferences {
   const values: Record<string, unknown> = {}
   for (const row of rows) values[String(row.key)] = JSON.parse(String(row.value_json))
   return {
+    noteEnterAction: values.noteEnterAction === 'send' ? 'send' : 'newline',
     themeMode: ['light', 'dark', 'system'].includes(String(values.themeMode))
       ? (values.themeMode as Preferences['themeMode'])
       : 'system',
@@ -171,6 +202,7 @@ export function preferences(): Preferences {
 }
 export function preference(key: keyof Preferences, value: string): Preferences {
   if (
+    !(key === 'noteEnterAction' && ['send', 'newline'].includes(value)) &&
     !(key === 'themeMode' && ['light', 'dark', 'system'].includes(value)) &&
     !(key === 'localePreference' && isLocale(value)) &&
     !(key === 'reportAutoSaveInterval' && isReportAutoSaveInterval(value))
@@ -188,6 +220,7 @@ export function preference(key: keyof Preferences, value: string): Preferences {
 export function bootstrap(): Bootstrap {
   database()
   let prefs: Preferences = {
+    noteEnterAction: 'newline',
     themeMode: 'system',
     localePreference: null,
     reportAutoSaveInterval: 'off'
@@ -204,6 +237,50 @@ export function bootstrap(): Bootstrap {
     locale: resolveLocale(prefs.localePreference, app.getPreferredSystemLanguages()),
     dark: nativeTheme.shouldUseDarkColors,
     preferenceError,
-    platform: process.platform
+    platform: process.platform,
+    dataDirectory: dataDirectory()
   }
+}
+
+export function reports(legacy: unknown): Record<string, string> {
+  database()
+  return dataFiles().reports(legacy)
+}
+export function saveReports(writes: ReportWrite[]): Record<string, string> {
+  database()
+  return dataFiles().saveReports(writes)
+}
+export function createReport(date: string): string {
+  database()
+  return dataFiles().createReport(date)
+}
+export function deleteReport(date: string, previous: string): null {
+  database()
+  return dataFiles().deleteReport(date, previous)
+}
+export function migrateDataDirectory(path: string): string {
+  database()
+  return dataFiles().migrate(
+    path,
+    () => {
+      const checkpoint = db!.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+      if (Number(checkpoint?.busy) !== 0) throw new ServiceError('storage')
+      db!.close()
+      db = undefined
+    },
+    (root) => {
+      const check = new DatabaseSync(join(root, 'dayflow.sqlite'), { readOnly: true })
+      try {
+        if (check.prepare('PRAGMA integrity_check').get()?.integrity_check !== 'ok')
+          throw new ServiceError('storage')
+        check.prepare('SELECT id FROM logs LIMIT 0').all()
+        check.prepare('SELECT key FROM app_settings LIMIT 0').all()
+      } finally {
+        check.close()
+        // A read-only WAL connection may leave fresh shared-memory files.
+        rmSync(join(root, 'dayflow.sqlite-shm'), { force: true })
+        rmSync(join(root, 'dayflow.sqlite-wal'), { force: true })
+      }
+    }
+  )
 }

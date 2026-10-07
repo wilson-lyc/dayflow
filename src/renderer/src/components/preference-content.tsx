@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import {
   reportAutoSaveIntervals,
   type ReportAutoSaveInterval,
@@ -8,7 +8,14 @@ import {
 import { translator, languages, type MessageKey } from '../lib/i18n'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
-import { Field, FieldLabel } from './ui/field'
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldTitle
+} from './ui/field'
 import {
   Select,
   SelectContent,
@@ -33,85 +40,152 @@ export function PreferenceContent({
   busy,
   error,
   onChange,
-  onRetry
+  onRetry,
+  dataDirectory,
+  migrating,
+  storageError,
+  onChangeDirectory,
+  onOpenDirectory,
+  children
 }: {
-  module: 'general' | 'appearance'
+  module: 'general' | 'report' | 'note'
   locale: Locale
   preferences: Preferences
   busy: boolean
   error: boolean
   onChange: (key: keyof Preferences, value: string) => void
   onRetry: () => void
+  dataDirectory: string
+  migrating: boolean
+  storageError: MessageKey | null
+  onChangeDirectory: () => void
+  onOpenDirectory: () => void
+  children?: ReactNode
 }): React.JSX.Element {
   const id = useId()
   const t = translator(locale)
   return (
     <section className="settings-section">
-      <h2>{t(module === 'general' ? 'interface' : 'appearance')}</h2>
-      <div className="settings-row">
-        <Field orientation="horizontal">
-          <FieldLabel htmlFor={id}>{t(module === 'general' ? 'language' : 'theme')}</FieldLabel>
-          <Select
-            value={module === 'general' ? locale : preferences.themeMode}
-            disabled={busy}
-            onValueChange={(value) => {
-              if (value) onChange(module === 'general' ? 'localePreference' : 'themeMode', value)
-            }}
-          >
-            <SelectTrigger id={id} className="min-w-36">
-              <SelectValue>
-                {module === 'general'
-                  ? languages.find((l) => l.code === locale)?.name
-                  : t(preferences.themeMode)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {module === 'general'
-                  ? languages.map((language) => (
-                      <SelectItem key={language.code} value={language.code}>
-                        {language.name}
-                      </SelectItem>
-                    ))
-                  : (['light', 'dark', 'system'] as const).map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {t(mode)}
-                      </SelectItem>
-                    ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      {module === 'general' && (
-        <>
-          <h2>{t('report')}</h2>
-          <div className="settings-row">
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor={`${id}-autosave`}>{t('reportAutoSave')}</FieldLabel>
+      <FieldGroup className="settings-fields">
+        {module === 'general' ? (
+          <>
+            <Field orientation="horizontal" className="settings-row" data-disabled={busy}>
+              <FieldLabel htmlFor={`${id}-theme`}>{t('theme')}</FieldLabel>
               <Select
-                value={preferences.reportAutoSaveInterval}
+                value={preferences.themeMode}
                 disabled={busy}
                 onValueChange={(value) => {
-                  if (value) onChange('reportAutoSaveInterval', value)
+                  if (value) onChange('themeMode', value)
                 }}
               >
-                <SelectTrigger id={`${id}-autosave`} className="min-w-36">
-                  <SelectValue>{t(autoSaveLabels[preferences.reportAutoSaveInterval])}</SelectValue>
+                <SelectTrigger id={`${id}-theme`} className="settings-control">
+                  <SelectValue>{t(preferences.themeMode)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {reportAutoSaveIntervals.map((interval) => (
-                      <SelectItem key={interval} value={interval}>
-                        {t(autoSaveLabels[interval])}
+                    {(['light', 'dark', 'system'] as const).map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {t(mode)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
-          </div>
-        </>
+            <Field orientation="horizontal" className="settings-row" data-disabled={busy}>
+              <FieldLabel htmlFor={`${id}-language`}>{t('language')}</FieldLabel>
+              <Select
+                value={locale}
+                disabled={busy}
+                onValueChange={(value) => {
+                  if (value) onChange('localePreference', value)
+                }}
+              >
+                <SelectTrigger id={`${id}-language`} className="settings-control">
+                  <SelectValue>
+                    {languages.find((language) => language.code === locale)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {languages.map((language) => (
+                      <SelectItem key={language.code} value={language.code}>
+                        {language.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field orientation="horizontal" className="settings-row" data-disabled={busy}>
+              <FieldContent>
+                <FieldTitle>{t('dataDirectory')}</FieldTitle>
+                <FieldDescription className="break-all">{dataDirectory}</FieldDescription>
+              </FieldContent>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button variant="ghost" disabled={busy} onClick={onOpenDirectory}>
+                  {t('openFolder')}
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={onChangeDirectory}>
+                  {t(migrating ? 'migratingData' : 'changeFolder')}
+                </Button>
+              </div>
+            </Field>
+          </>
+        ) : module === 'note' ? (
+          <Field orientation="horizontal" className="settings-row" data-disabled={busy}>
+            <FieldLabel htmlFor={`${id}-enter`}>{t('noteEnterAction')}</FieldLabel>
+            <Select
+              value={preferences.noteEnterAction}
+              disabled={busy}
+              onValueChange={(value) => {
+                if (value) onChange('noteEnterAction', value)
+              }}
+            >
+              <SelectTrigger id={`${id}-enter`} className="settings-control">
+                <SelectValue>
+                  {t(preferences.noteEnterAction === 'send' ? 'enterSend' : 'enterNewline')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="send">{t('enterSend')}</SelectItem>
+                  <SelectItem value="newline">{t('enterNewline')}</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : (
+          <Field orientation="horizontal" className="settings-row" data-disabled={busy}>
+            <FieldLabel htmlFor={`${id}-autosave`}>{t('reportAutoSave')}</FieldLabel>
+            <Select
+              value={preferences.reportAutoSaveInterval}
+              disabled={busy}
+              onValueChange={(value) => {
+                if (value) onChange('reportAutoSaveInterval', value)
+              }}
+            >
+              <SelectTrigger id={`${id}-autosave`} className="settings-control">
+                <SelectValue>{t(autoSaveLabels[preferences.reportAutoSaveInterval])}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {reportAutoSaveIntervals.map((interval) => (
+                    <SelectItem key={interval} value={interval}>
+                      {t(autoSaveLabels[interval])}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        {children}
+      </FieldGroup>
+      {module === 'general' && storageError && (
+        <Alert variant="destructive">
+          <AlertDescription>{t(storageError)}</AlertDescription>
+        </Alert>
       )}
       {error && (
         <Alert variant="destructive">

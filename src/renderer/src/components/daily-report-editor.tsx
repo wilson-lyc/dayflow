@@ -17,6 +17,7 @@ import {
 import type { Locale } from '../../../shared/model'
 import { translator } from '../lib/i18n'
 import { Button } from './ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 export type DailyReportEditorProps = {
   content: string
@@ -25,8 +26,9 @@ export type DailyReportEditorProps = {
   dirty: boolean
   onSave: () => void
   onPreview?: () => void
-  error?: 'read' | 'save' | null
+  error?: 'read' | 'save' | 'conflict' | null
   actions?: ReactNode
+  toolbarActions?: ReactNode
   showTitle?: boolean
   onChange: (content: string) => void
   onRetry?: () => void
@@ -118,6 +120,7 @@ export function DailyReportEditor({
   onPreview,
   error,
   actions,
+  toolbarActions,
   showTitle = true,
   onChange,
   onRetry
@@ -151,7 +154,15 @@ export function DailyReportEditor({
       )}
       {error && (
         <div className="report-error" role="alert">
-          <span>{t(error === 'read' ? 'reportReadError' : 'operationError')}</span>
+          <span>
+            {t(
+              error === 'read'
+                ? 'reportReadError'
+                : error === 'conflict'
+                  ? 'reportConflict'
+                  : 'operationError'
+            )}
+          </span>
           <Button variant="outline" size="sm" onClick={onRetry}>
             {t('retry')}
           </Button>
@@ -176,29 +187,37 @@ export function DailyReportEditor({
               <format.icon />
             </Button>
           ))}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="ml-auto"
-            aria-label={t('save')}
-            title={t('reportSaveShortcut')}
-            disabled={locked || !dirty}
-            onClick={onSave}
-          >
-            <Save data-icon="inline-start" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={<span className="ml-auto inline-flex" />}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('save')}
+                disabled={locked || !dirty}
+                onClick={onSave}
+              >
+                <Save data-icon="inline-start" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('reportSaveShortcut')}</TooltipContent>
+          </Tooltip>
           {onPreview && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('reportPreview')}
-              title={t('reportPreview')}
-              disabled={locked}
-              onClick={onPreview}
-            >
-              <Eye data-icon="inline-start" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger render={<span className="inline-flex" />}>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('reportPreview')}
+                  disabled={locked}
+                  onClick={onPreview}
+                >
+                  <Eye data-icon="inline-start" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('reportPreview')}</TooltipContent>
+            </Tooltip>
           )}
+          {toolbarActions}
         </div>
         <CodeMirror
           ref={editor}

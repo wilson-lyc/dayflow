@@ -26,7 +26,10 @@ export function errorKey(code: ErrorCode): MessageKey {
       'too-long': 'tooLong',
       time: 'invalidTime',
       state: 'stateError',
-      version: 'versionError'
+      version: 'versionError',
+      conflict: 'reportConflict',
+      'directory-not-empty': 'directoryNotEmpty',
+      'invalid-directory': 'invalidDirectory'
     } as const
   )[code]
 }

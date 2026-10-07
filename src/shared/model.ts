@@ -27,12 +27,28 @@ export type ReportAutoSaveInterval = (typeof reportAutoSaveIntervals)[number]
 export function isReportAutoSaveInterval(value: unknown): value is ReportAutoSaveInterval {
   return reportAutoSaveIntervals.some((interval) => interval === value)
 }
+export type NoteEnterAction = 'send' | 'newline'
 export interface Preferences {
+  noteEnterAction: NoteEnterAction
   themeMode: ThemeMode
   localePreference: string | null
   reportAutoSaveInterval: ReportAutoSaveInterval
 }
-export type ErrorCode = 'storage' | 'empty' | 'too-long' | 'time' | 'state' | 'version'
+export type ErrorCode =
+  | 'storage'
+  | 'empty'
+  | 'too-long'
+  | 'time'
+  | 'state'
+  | 'version'
+  | 'conflict'
+  | 'directory-not-empty'
+  | 'invalid-directory'
+export interface ReportWrite {
+  date: string
+  content: string
+  previous: string
+}
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode }
 export interface Bootstrap {
   preferences: Preferences
@@ -40,6 +56,7 @@ export interface Bootstrap {
   dark: boolean
   preferenceError: boolean
   platform: string
+  dataDirectory: string
 }
 export interface DayflowAPI {
   bootstrap(): Promise<Result<Bootstrap>>
@@ -54,6 +71,13 @@ export interface DayflowAPI {
   ): Promise<Result<Log>>
   change(id: string, action: 'trash' | 'restore' | 'delete'): Promise<Result<Log | null>>
   preference(key: keyof Preferences, value: string): Promise<Result<Preferences>>
+  reports(legacy: Record<string, string>): Promise<Result<Record<string, string>>>
+  saveReports(writes: ReportWrite[]): Promise<Result<Record<string, string>>>
+  createReport(date: string): Promise<Result<string>>
+  deleteReport(date: string, previous: string): Promise<Result<null>>
+  chooseDataDirectory(): Promise<Result<string | null>>
+  migrateDataDirectory(path: string): Promise<Result<string>>
+  openDataDirectory(): Promise<Result<null>>
   finishClose(): void
   cancelClose(): void
   ready(): void

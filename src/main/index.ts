@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, Menu, dialog, shell } from 'electron'
 import { join } from 'node:path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import icon from '../../resources/icon.png?asset'
 import * as store from './store'
 import type { Preferences, Result } from '../shared/model'
 
@@ -20,6 +21,7 @@ function createWindow(): void {
     minHeight: 560,
     show: false,
     title: 'Dayflow',
+    icon,
     backgroundColor: background(),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
@@ -77,16 +79,17 @@ else {
     }
   })
   app.whenReady().then(() => {
+    if (process.platform === 'darwin') app.dock?.setIcon(icon)
     electronApp.setAppUserModelId('com.dayflow.app')
-    function handle<T>(channel: string, operation: (...args: never[]) => T): void {
-      ipcMain.handle(`dayflow:${channel}`, (event, ...args): Result<T> => {
+    function handle<T>(channel: string, operation: (...args: never[]) => T | Promise<T>): void {
+      ipcMain.handle(`dayflow:${channel}`, async (event, ...args): Promise<Result<T>> => {
         if (
           event.sender !== mainWindow?.webContents ||
           event.senderFrame !== mainWindow.webContents.mainFrame
         )
           return { ok: false, error: 'state' }
         try {
-          return { ok: true, value: operation(...(args as never[])) }
+          return { ok: true, value: await operation(...(args as never[])) }
         } catch (error) {
           console.error(`Dayflow ${channel}:`, error)
           return { ok: false, error: error instanceof store.ServiceError ? error.code : 'storage' }
@@ -100,6 +103,30 @@ else {
     handle('edit', store.edit)
     handle('change', store.change)
     handle('preference', store.preference)
+    handle('reports', store.reports)
+    handle('save-reports', store.saveReports)
+    handle('create-report', store.createReport)
+    handle('delete-report', store.deleteReport)
+    let selectedDirectory: string | null = null
+    handle('choose-data-directory', async () => {
+      if (!mainWindow) throw new store.ServiceError('state')
+      const result = await dialog.showOpenDialog(mainWindow, {
+        defaultPath: store.dataDirectory(),
+        properties: ['openDirectory', 'createDirectory', 'showHiddenFiles']
+      })
+      selectedDirectory = result.canceled ? null : (result.filePaths[0] ?? null)
+      return selectedDirectory
+    })
+    handle('migrate-data-directory', (path: string) => {
+      if (!selectedDirectory || path !== selectedDirectory) throw new store.ServiceError('state')
+      selectedDirectory = null
+      return store.migrateDataDirectory(path)
+    })
+    handle('open-data-directory', async () => {
+      const error = await shell.openPath(store.dataDirectory())
+      if (error) throw new store.ServiceError('storage')
+      return null
+    })
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
         ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),

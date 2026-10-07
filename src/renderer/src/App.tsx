@@ -4,10 +4,11 @@ import { Button } from './components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from './components/ui/tooltip'
 import { Textarea } from './components/ui/textarea'
 import { Input } from './components/ui/input'
-import { Field, FieldGroup, FieldLabel, FieldError } from './components/ui/field'
+import { Field, FieldGroup, FieldLabel, FieldError, FieldTitle } from './components/ui/field'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './components/ui/empty'
 import { Skeleton } from './components/ui/skeleton'
+import { toast, Toaster } from './components/ui/toast'
 import {
   Dialog,
   DialogContent,
@@ -24,13 +25,13 @@ import {
   AlertDialogFooter
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
-import { DailyReport } from './components/daily-report'
+import { DailyReportModule, type DailyReportModuleProps } from './components/daily-report-module'
 import { useDailyReport } from './hooks/use-daily-report'
 import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
 import { PreferenceContent } from './components/preference-content'
 import { TrashContent } from './components/trash-content'
-import { QuickNotesBlock } from './components/quick-notes-block'
+import { QuickNotesModule, type QuickNotesModuleProps } from './components/quick-notes-module'
 import { validateQuickNote } from './lib/quick-note'
 import {
   blankDraft,
@@ -68,6 +69,7 @@ function App(): React.JSX.Element {
   const [locale, setLocale] = useState<Locale>(() => resolveLocale(null, navigator.languages))
   const t = translator(locale)
   const [prefs, setPrefs] = useState<Preferences>({
+    noteEnterAction: 'newline',
     themeMode: 'system',
     localePreference: null,
     reportAutoSaveInterval: 'off'
@@ -79,11 +81,12 @@ function App(): React.JSX.Element {
   const [homeReportVisible, setHomeReportVisible] = useState(false)
   const [activeHomeCard, setActiveHomeCard] = useState<'notes' | 'report'>('notes')
   const viewRef = useRef<View>('daily')
+  const [settingsDetailOpen, setSettingsDetailOpen] = useState(false)
   const [settingsModule, setSettingsModule] = useState<SettingsModule>('general')
   const settingsModuleRef = useRef<SettingsModule>('general')
   const [date, setDate] = useState(today)
   const dateRef = useRef(date)
-  const report = useDailyReport(date, prefs.reportAutoSaveInterval)
+  const report = useDailyReport(date, prefs.reportAutoSaveInterval, ready)
   const saveReport = report.save
   const [reportCloseOpen, setReportCloseOpen] = useState(false)
   const [clockTimestamp, setClockTimestamp] = useState(Date.now)
@@ -104,6 +107,9 @@ function App(): React.JSX.Element {
   const [notice, setNotice] = useState<Notice | null>(null)
   const [preferenceError, setPreferenceError] = useState(false)
   const [preferenceBusy, setPreferenceBusy] = useState(false)
+  const [dataDirectory, setDataDirectory] = useState('')
+  const [migrating, setMigrating] = useState(false)
+  const [storageError, setStorageError] = useState<MessageKey | null>(null)
   const [failedPreference, setFailedPreference] = useState<{
     key: keyof Preferences
     value: string
@@ -194,6 +200,7 @@ function App(): React.JSX.Element {
       resetDraft(blankDraft(selected))
     dateRef.current = selected
     setDate(selected)
+    if (page === 'settings') setSettingsDetailOpen(false)
     viewRef.current = page
     setView(page)
     if (page === 'daily') {
@@ -218,6 +225,7 @@ function App(): React.JSX.Element {
           void load(dateRef.current, 'trash', 'bottom')
         }
       }
+      setSettingsDetailOpen(true)
     })
   }
   useLayoutEffect(() => {
@@ -249,6 +257,7 @@ function App(): React.JSX.Element {
     setLocale(value.locale)
     setPrefs(value.preferences)
     setPlatform(value.platform)
+    setDataDirectory(value.dataDirectory)
     document.documentElement.classList.toggle('dark', value.dark)
     setPreferenceError(value.preferenceError)
     if (value.preferenceError) setNotice({ key: 'preferencesError', warning: true })
@@ -278,11 +287,6 @@ function App(): React.JSX.Element {
   useEffect(() => {
     document.documentElement.lang = locale
   }, [locale])
-  useEffect(() => {
-    if (!notice || notice.warning || notice.date || notice.trash) return
-    const timer = setTimeout(() => setNotice(null), 5000)
-    return () => clearTimeout(timer)
-  }, [notice])
 
   function dirty(): boolean {
     const edit = editorRef.current
@@ -331,7 +335,8 @@ function App(): React.JSX.Element {
       )
         return
       event.preventDefault()
-      if (!busyRef.current && !editorRef.current && !confirmation && !reportCloseOpen) saveReport()
+      if (!busyRef.current && !editorRef.current && !confirmation && !reportCloseOpen)
+        void saveReport()
     }
     window.addEventListener('keydown', saveShortcut)
     return () => window.removeEventListener('keydown', saveShortcut)
@@ -457,7 +462,7 @@ function App(): React.JSX.Element {
     else setNotice({ key: action === 'trash' ? 'trashed' : 'deleted', trash: action === 'trash' })
   }
   async function changePreference(key: keyof Preferences, value: string): Promise<void> {
-    if (preferenceBusy) return
+    if (preferenceBusy || busyRef.current) return
     setPreferenceBusy(true)
     setPreferenceError(false)
     const result = await api.preference(key, value)
@@ -470,6 +475,51 @@ function App(): React.JSX.Element {
     setFailedPreference(null)
     setPrefs(result.value)
     if (key === 'localePreference') setLocale(value as Locale)
+  }
+  async function changeDataDirectory(): Promise<void> {
+    if (busyRef.current || preferenceBusy || report.loading || report.creating) return
+    setLocked(true)
+    setStorageError(null)
+    try {
+      const selection = await api.chooseDataDirectory()
+      if (!selection.ok) {
+        setStorageError('migrationFailed')
+        return
+      }
+      if (!selection.value || selection.value === dataDirectory) return
+      setMigrating(true)
+      if (!(await report.saveAll())) {
+        setStorageError('saveBeforeMigrationFailed')
+        return
+      }
+      const result = await api.migrateDataDirectory(selection.value)
+      if (!result.ok) {
+        setStorageError(
+          result.error === 'directory-not-empty'
+            ? 'directoryNotEmpty'
+            : result.error === 'invalid-directory'
+              ? 'invalidDirectory'
+              : 'migrationFailed'
+        )
+        return
+      }
+      setDataDirectory(result.value)
+      setNotice({ key: 'dataMigrated' })
+    } catch {
+      setStorageError('migrationFailed')
+    } finally {
+      setMigrating(false)
+      setLocked(false)
+    }
+  }
+  async function openDataDirectory(): Promise<void> {
+    if (busyRef.current) return
+    try {
+      const result = await api.openDataDirectory()
+      setStorageError(result.ok ? null : 'openFolderFailed')
+    } catch {
+      setStorageError('openFolderFailed')
+    }
   }
   async function confirm(): Promise<void> {
     if (!confirmation || busyRef.current) return
@@ -502,17 +552,80 @@ function App(): React.JSX.Element {
   const confirmHint: MessageKey =
     confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
   const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
-  const reportProps = {
-    ...report,
+  const reportProps: DailyReportModuleProps = {
+    content: report.content,
+    exists: report.exists,
+    loading: report.loading,
+    creating: report.creating,
+    createError: report.createError,
+    deleting: report.deleting,
+    onDelete: async (): Promise<boolean> => {
+      if (busyRef.current) return false
+      setLocked(true)
+      try {
+        return await report.remove()
+      } finally {
+        setLocked(false)
+      }
+    },
+    error: report.error,
+    dirty: report.dirty,
+    onChange: report.onChange,
     onRetry: report.retry,
-    onSave: report.save,
+    onSave: (): void => {
+      void report.save()
+    },
+    onCreate: (): void => {
+      if (!busyRef.current) void report.create()
+    },
     locale,
-    disabled: busy
+    disabled: busy || report.loading || report.creating
+  }
+  const notesProps: QuickNotesModuleProps = {
+    date,
+    today: clockDate,
+    listRef,
+    notes: {
+      logs,
+      state: listState,
+      locale,
+      busy,
+      onRetry: () => void load(date, 'daily', 'bottom'),
+      onEdit: beginEdit,
+      onTrash: (log) =>
+        protect(() => {
+          setConfirmError(null)
+          setConfirmation({ kind: 'trash', log })
+        })
+    },
+    composer: {
+      enterAction: prefs.noteEnterAction,
+      value: draft,
+      locale,
+      now: clockTimestamp,
+      ready,
+      busy,
+      blocked: !!editor,
+      pendingEditable,
+      error: saveError,
+      inputRef,
+      onChange: updateDraft,
+      onSubmit: () => void submit(Date.now())
+    }
   }
   const preferenceProps = {
     locale,
     preferences: prefs,
-    busy: preferenceBusy,
+    busy: preferenceBusy || busy || report.loading || report.creating,
+    dataDirectory,
+    migrating,
+    storageError,
+    onChangeDirectory: (): void => {
+      void changeDataDirectory()
+    },
+    onOpenDirectory: (): void => {
+      void openDataDirectory()
+    },
     error: preferenceError,
     onChange: (key: keyof Preferences, value: string): void => {
       void changePreference(key, value)
@@ -522,6 +635,34 @@ function App(): React.JSX.Element {
     }
   }
 
+  useEffect(() => {
+    if (!notice) return
+    const id = toast.add({
+      title: t(notice.key, { date: notice.date ?? '' }),
+      type: notice.warning ? 'error' : 'success',
+      timeout: notice.warning || notice.date || notice.trash ? 0 : 5000,
+      actionProps: notice.date
+        ? {
+            children: t('viewDay'),
+            onClick: () => {
+              protect(() => navigate('daily', notice.date!, notice.id ?? 'bottom'))
+              toast.close(id)
+            }
+          }
+        : notice.trash
+          ? {
+              children: t('trash'),
+              onClick: () => {
+                selectSettingsModule('trash')
+                toast.close(id)
+              }
+            }
+          : undefined
+    })
+    return () => toast.close(id)
+    // Navigation handlers read current state through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notice, locale])
   return (
     <div className={cn('window-shell', platform !== 'darwin' && 'other-platform')}>
       <header className="window-top">
@@ -619,48 +760,26 @@ function App(): React.JSX.Element {
             <Button
               variant="header-ghost"
               disabled={busy}
-              onClick={() => protect(() => navigate('daily'))}
+              onClick={() =>
+                protect(() => {
+                  if (window.matchMedia('(max-width: 600px)').matches && settingsDetailOpen) {
+                    if (settingsModule === 'trash') selectSettingsModule('note')
+                    else setSettingsDetailOpen(false)
+                  } else navigate('daily')
+                })
+              }
             >
               <ArrowLeft data-icon="inline-start" />
               {t('back')}
             </Button>
-            <span className="top-title">{t('settings')}</span>
+            <span className="top-title settings-wide-title">{t('settings')}</span>
+            <span className="top-title settings-narrow-title">
+              {t(settingsDetailOpen ? settingsModule : 'settings')}
+            </span>
           </>
         )}
       </header>
-      {notice && (
-        <div className="feedback-area" role="status">
-          <Alert variant={notice.warning ? 'destructive' : 'default'}>
-            <AlertDescription className="flex flex-wrap items-center gap-2">
-              <span>{t(notice.key, { date: notice.date ?? '' })}</span>
-              {notice.date && (
-                <Button
-                  variant="link"
-                  size="sm"
-                  onClick={() =>
-                    protect(() => navigate('daily', notice.date!, notice.id ?? 'bottom'))
-                  }
-                >
-                  {t('viewDay')}
-                </Button>
-              )}
-              {notice.trash && (
-                <Button variant="link" size="sm" onClick={() => selectSettingsModule('trash')}>
-                  {t('trash')}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setNotice(null)}
-                aria-label={t('close')}
-              >
-                ×
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
+      <Toaster closeLabel={t('close')} />
       {bootError ? (
         <Empty>
           <EmptyHeader>
@@ -678,25 +797,53 @@ function App(): React.JSX.Element {
         <SettingsPage
           locale={locale}
           active={settingsModule}
+          detailOpen={settingsDetailOpen}
           disabled={busy}
           onChange={selectSettingsModule}
           contents={{
             general: <PreferenceContent module="general" {...preferenceProps} />,
-            appearance: <PreferenceContent module="appearance" {...preferenceProps} />,
+            report: <PreferenceContent module="report" {...preferenceProps} />,
+            note: (
+              <PreferenceContent module="note" {...preferenceProps}>
+                <Field orientation="horizontal" className="settings-row">
+                  <FieldTitle>{t('trash')}</FieldTitle>
+                  <Button
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => selectSettingsModule('trash')}
+                  >
+                    {t('openTrash')}
+                    <ChevronRight data-icon="inline-end" />
+                  </Button>
+                </Field>
+              </PreferenceContent>
+            ),
             trash: (
-              <TrashContent
-                listRef={listRef}
-                logs={logs}
-                state={listState}
-                locale={locale}
-                busy={busy}
-                onRetry={() => void load(date, 'trash', 'bottom')}
-                onRestore={(log) => void operate(log, 'restore')}
-                onDelete={(log) => {
-                  setConfirmError(null)
-                  setConfirmation({ kind: 'delete', log })
-                }}
-              />
+              <>
+                <Button
+                  variant="ghost"
+                  className="self-start mb-4 settings-trash-back"
+                  disabled={busy}
+                  onClick={() => selectSettingsModule('note')}
+                >
+                  <ArrowLeft data-icon="inline-start" />
+                  {t('back')}
+                </Button>
+                <h2 className="mb-4 text-sm font-medium">{t('trash')}</h2>
+                <TrashContent
+                  listRef={listRef}
+                  logs={logs}
+                  state={listState}
+                  locale={locale}
+                  busy={busy}
+                  onRetry={() => void load(date, 'trash', 'bottom')}
+                  onRestore={(log) => void operate(log, 'restore')}
+                  onDelete={(log) => {
+                    setConfirmError(null)
+                    setConfirmation({ kind: 'delete', log })
+                  }}
+                />
+              </>
             )
           }}
         />
@@ -705,45 +852,8 @@ function App(): React.JSX.Element {
           activeCard={activeHomeCard}
           onReportVisibleChange={setHomeReportVisible}
           resizeLabel={t('resizeNotesReport')}
-          report={<DailyReport key={date} {...reportProps} showTitle={false} />}
-          notes={
-            <QuickNotesBlock
-              listRef={listRef}
-              notes={{
-                logs,
-                state: listState,
-                locale,
-                busy,
-                emptyTitle:
-                  date > clockDate ? 'future' : date === clockDate ? 'emptyToday' : 'emptyDay',
-                emptyHint: date <= clockDate,
-                onRetry: () => void load(date, 'daily', 'bottom'),
-                onEdit: beginEdit,
-                onTrash: (log) =>
-                  protect(() => {
-                    setConfirmError(null)
-                    setConfirmation({ kind: 'trash', log })
-                  })
-              }}
-              composer={
-                date <= clockDate || draft.content
-                  ? {
-                      value: draft,
-                      locale,
-                      now: clockTimestamp,
-                      ready,
-                      busy,
-                      blocked: !!editor,
-                      pendingEditable,
-                      error: saveError,
-                      inputRef,
-                      onChange: updateDraft,
-                      onSubmit: () => void submit(Date.now())
-                    }
-                  : undefined
-              }
-            />
-          }
+          report={<DailyReportModule key={date} {...reportProps} />}
+          notes={<QuickNotesModule {...notesProps} />}
         />
       )}
       <Dialog
@@ -836,7 +946,7 @@ function App(): React.JSX.Element {
       <AlertDialog
         open={reportCloseOpen}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !busy) {
             setReportCloseOpen(false)
             api.cancelClose()
           }
@@ -847,14 +957,17 @@ function App(): React.JSX.Element {
             <AlertDialogTitle>{t('reportCloseTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('reportCloseHint')}</AlertDialogDescription>
           </AlertDialogHeader>
-          {report.error === 'save' && (
+          {(report.error === 'save' || report.error === 'conflict') && (
             <Alert variant="destructive">
-              <AlertDescription>{t('operationError')}</AlertDescription>
+              <AlertDescription>
+                {t(report.error === 'conflict' ? 'reportConflict' : 'operationError')}
+              </AlertDescription>
             </Alert>
           )}
           <AlertDialogFooter>
             <Button
               variant="outline"
+              disabled={busy}
               onClick={() => {
                 setReportCloseOpen(false)
                 api.cancelClose()
@@ -864,6 +977,7 @@ function App(): React.JSX.Element {
             </Button>
             <Button
               variant="ghost"
+              disabled={busy || report.saving}
               onClick={() => {
                 setReportCloseOpen(false)
                 api.finishClose()
@@ -872,10 +986,16 @@ function App(): React.JSX.Element {
               {t('discard')}
             </Button>
             <Button
-              onClick={() => {
-                if (report.saveAll()) {
-                  setReportCloseOpen(false)
-                  api.finishClose()
+              disabled={busy || report.loading}
+              onClick={async () => {
+                setLocked(true)
+                try {
+                  if (await report.saveAll()) {
+                    setReportCloseOpen(false)
+                    api.finishClose()
+                  }
+                } finally {
+                  setLocked(false)
                 }
               }}
             >
@@ -899,17 +1019,6 @@ function App(): React.JSX.Element {
             <AlertDialogTitle>{t(confirmTitle)}</AlertDialogTitle>
             <AlertDialogDescription>{t(confirmHint)}</AlertDialogDescription>
           </AlertDialogHeader>
-          {confirmation && 'log' in confirmation && (
-            <div className="confirmation-preview">
-              <p>
-                {confirmation.log.localDate} ·{' '}
-                {timeText(confirmation.log.recordedAt, confirmation.log.timeZone)}
-              </p>
-              <p className="line-clamp-3 whitespace-pre-wrap break-all">
-                {confirmation.log.content}
-              </p>
-            </div>
-          )}
           {confirmError && (
             <Alert variant="destructive">
               <AlertDescription>{t(errorKey(confirmError))}</AlertDescription>
@@ -944,7 +1053,7 @@ function App(): React.JSX.Element {
               </Button>
             )}
             <Button
-              variant={confirmKind === 'delete' ? 'destructive' : 'default'}
+              variant={confirmKind === 'leave' ? 'default' : 'destructive'}
               disabled={busy}
               onClick={() => void confirm()}
             >
