@@ -1,23 +1,11 @@
-import { useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
-import CodeMirror, { EditorView, keymap, type ReactCodeMirrorRef } from '@uiw/react-codemirror'
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import {
-  Bold,
-  Italic,
-  Heading2,
-  List,
-  ListOrdered,
-  ListTodo,
-  Link,
-  Quote,
-  Code,
-  Save,
-  Eye
-} from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Save } from 'lucide-react'
 import type { Locale } from '../../../shared/model'
 import { translator } from '../lib/i18n'
 import { Button } from './ui/button'
+import { Alert, AlertDescription } from './ui/alert'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { DailyReportRichEditor } from './daily-report-rich-editor'
 
 export type DailyReportEditorProps = {
   content: string
@@ -25,90 +13,12 @@ export type DailyReportEditorProps = {
   disabled?: boolean
   dirty: boolean
   onSave: () => void
-  onPreview?: () => void
   error?: 'read' | 'save' | 'conflict' | null
   actions?: ReactNode
-  toolbarActions?: ReactNode
+  statusActions?: ReactNode
   showTitle?: boolean
   onChange: (content: string) => void
   onRetry?: () => void
-}
-
-const formats = [
-  { key: 'mdHeading', icon: Heading2, prefix: '## ' },
-  { key: 'mdBold', icon: Bold, before: '**', after: '**' },
-  { key: 'mdItalic', icon: Italic, before: '*', after: '*' },
-  { key: 'mdList', icon: List, prefix: '- ' },
-  { key: 'mdOrderedList', icon: ListOrdered, prefix: '1. ' },
-  { key: 'mdTaskList', icon: ListTodo, prefix: '- [ ] ' },
-  { key: 'mdLink', icon: Link, before: '[', after: '](https://)' },
-  { key: 'mdQuote', icon: Quote, prefix: '> ' },
-  { key: 'mdCode', icon: Code, before: '```\n', after: '\n```' }
-] as const
-
-type Format = (typeof formats)[number]
-
-function subscribeTheme(onChange: () => void): () => void {
-  const observer = new MutationObserver(onChange)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
-  return () => observer.disconnect()
-}
-function isDark(): boolean {
-  return document.documentElement.classList.contains('dark')
-}
-
-const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'transparent', color: 'var(--foreground)', height: '100%' },
-  '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit', lineHeight: '1.8' },
-  '.cm-content': { padding: '12px 0', minHeight: '100%', caretColor: 'var(--foreground)' },
-  '.cm-line': { padding: '0 16px' },
-  '.cm-placeholder': { color: 'var(--muted-foreground)' },
-  '.cm-cursor': { borderLeftColor: 'var(--foreground)' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'color-mix(in srgb, var(--ring) 25%, transparent)'
-  },
-  '.cm-activeLine': { backgroundColor: 'var(--muted)' }
-})
-
-function applyFormat(view: EditorView, format: Format, locale: Locale): boolean {
-  const { from, to } = view.state.selection.main
-  const doc = view.state.doc
-  if ('prefix' in format) {
-    const first = doc.lineAt(from)
-    const last = doc.lineAt(to > from ? to - 1 : to)
-    const lines = doc.sliceString(first.from, last.to).split('\n')
-    const text = lines
-      .map(
-        (line, index) =>
-          `${format.key === 'mdOrderedList' ? `${index + 1}. ` : format.prefix}${line}`
-      )
-      .join('\n')
-    view.dispatch({
-      changes: { from: first.from, to: last.to, insert: text },
-      selection: { anchor: first.from + format.prefix.length, head: first.from + text.length },
-      scrollIntoView: true,
-      userEvent: 'input'
-    })
-  } else {
-    const text = doc.sliceString(from, to) || translator(locale)(format.key)
-    const before =
-      format.key === 'mdCode' && from > 0 && doc.sliceString(from - 1, from) !== '\n'
-        ? `\n${format.before}`
-        : format.before
-    const after =
-      format.key === 'mdCode' && to < doc.length && doc.sliceString(to, to + 1) !== '\n'
-        ? `${format.after}\n`
-        : format.after
-    view.dispatch({
-      changes: { from, to, insert: `${before}${text}${after}` },
-      selection: { anchor: from + before.length, head: from + before.length + text.length },
-      scrollIntoView: true,
-      userEvent: 'input'
-    })
-  }
-  view.focus()
-  return true
 }
 
 export function DailyReportEditor({
@@ -117,126 +27,81 @@ export function DailyReportEditor({
   disabled,
   dirty,
   onSave,
-  onPreview,
   error,
   actions,
-  toolbarActions,
+  statusActions,
   showTitle = true,
   onChange,
   onRetry
 }: DailyReportEditorProps): React.JSX.Element {
   const t = translator(locale)
-  const editor = useRef<ReactCodeMirrorRef>(null)
-  const dark = useSyncExternalStore(subscribeTheme, isDark)
+  const [failed, setFailed] = useState(false)
   const locked = !!disabled || error === 'read'
-
-  const extensions = useMemo(
-    () => [
-      markdown({ base: markdownLanguage }),
-      EditorView.lineWrapping,
-      editorTheme,
-      EditorView.contentAttributes.of({ 'aria-label': translator(locale)('reportEdit') }),
-      keymap.of([
-        { key: 'Mod-b', run: (view) => !locked && applyFormat(view, formats[1], locale) },
-        { key: 'Mod-i', run: (view) => !locked && applyFormat(view, formats[2], locale) }
-      ])
-    ],
-    [locale, locked]
-  )
-
   return (
     <section className="report-editor" aria-label={t('reportEdit')}>
-      {(showTitle || actions) && (
+      {showTitle && (
         <div className="report-toolbar">
-          {showTitle && <span className="font-medium">{t('report')}</span>}
-          <div className="report-actions">{actions}</div>
+          <span className="font-medium">{t('report')}</span>
+          {actions}
         </div>
       )}
-      {error && (
-        <div className="report-error" role="alert">
-          <span>
+      {(error || failed) && (
+        <Alert variant="destructive">
+          <AlertDescription>
             {t(
-              error === 'read'
-                ? 'reportReadError'
-                : error === 'conflict'
-                  ? 'reportConflict'
-                  : 'operationError'
+              failed
+                ? 'reportRichError'
+                : error === 'read'
+                  ? 'reportReadError'
+                  : error === 'conflict'
+                    ? 'reportConflict'
+                    : 'operationError'
             )}
-          </span>
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            {t('retry')}
-          </Button>
-        </div>
-      )}
-      <div className="report-markdown-editor" data-disabled={locked || undefined}>
-        <div className="report-format-toolbar" role="group" aria-label={t('mdFormatting')}>
-          {formats.map((format) => (
             <Button
-              key={format.key}
-              variant="ghost"
-              size="icon-sm"
-              title={t(format.key)}
-              aria-label={t(format.key)}
-              disabled={locked}
-              onMouseDown={(event) => event.preventDefault()}
+              variant="outline"
+              size="sm"
               onClick={() => {
-                const view = editor.current?.view
-                if (view && !locked) applyFormat(view, format, locale)
+                setFailed(false)
+                onRetry?.()
               }}
             >
-              <format.icon />
+              {t('retry')}
             </Button>
-          ))}
-          <Tooltip>
-            <TooltipTrigger render={<span className="ml-auto inline-flex" />}>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('save')}
-                disabled={locked || !dirty}
-                onClick={onSave}
-              >
-                <Save data-icon="inline-start" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('reportSaveShortcut')}</TooltipContent>
-          </Tooltip>
-          {onPreview && (
-            <Tooltip>
-              <TooltipTrigger render={<span className="inline-flex" />}>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('reportPreview')}
-                  disabled={locked}
-                  onClick={onPreview}
-                >
-                  <Eye data-icon="inline-start" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('reportPreview')}</TooltipContent>
-            </Tooltip>
-          )}
-          {toolbarActions}
-        </div>
-        <CodeMirror
-          ref={editor}
-          value={content}
-          className="report-code-editor"
-          height="100%"
-          theme={dark ? 'dark' : 'light'}
-          editable={!locked}
-          readOnly={locked}
-          indentWithTab={false}
-          placeholder={t('reportPlaceholder')}
-          extensions={extensions}
-          basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLineGutter: false }}
-          onChange={onChange}
-        />
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="report-document-editor" data-disabled={locked || undefined}>
+        {!failed && (
+          <DailyReportRichEditor
+            content={content}
+            locale={locale}
+            locked={locked}
+            onChange={onChange}
+            onSave={onSave}
+            onFailure={() => setFailed(true)}
+          />
+        )}
         <div className="report-status-bar">
-          <span className="report-save-status" role="status">
-            {t(dirty ? 'reportUnsaved' : 'reportSaved')}
-          </span>
+          <span role="status">{t(dirty ? 'reportUnsaved' : 'reportSaved')}</span>
+          <div className="report-actions ml-auto">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('save')}
+                    disabled={locked || !dirty || failed}
+                    onClick={onSave}
+                  >
+                    <Save data-icon="inline-start" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{t('reportSaveShortcut')}</TooltipContent>
+            </Tooltip>
+            {statusActions}
+          </div>
         </div>
       </div>
     </section>

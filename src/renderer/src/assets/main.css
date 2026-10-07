@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '@textbus/xnote/style.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -490,6 +491,9 @@ textarea,
   letter-spacing: -0.02em;
   margin: 0 0 24px;
 }
+.settings-content .settings-heading-row h1 {
+  margin: 0;
+}
 .settings-section {
   display: flex;
   flex-direction: column;
@@ -659,16 +663,14 @@ textarea,
 .home-card-track > .home-block {
   flex: 0 0 calc(100% - 8px);
 }
-.home-report .report-editor,
-.home-report .report-preview {
+.home-report .report-editor {
   padding: 0;
+  gap: 0;
 }
-.home-report .report-preview > .report-toolbar {
-  padding: 6px;
-  padding-left: 16px;
-  border-bottom: 1px solid var(--border);
+.home-report .report-editor > .report-toolbar {
+  padding: 8px 12px;
 }
-.home-report .report-markdown-editor {
+.home-report .report-document-editor {
   border: 0;
   border-radius: 0;
 }
@@ -713,8 +715,7 @@ textarea,
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-.report-editor,
-.report-preview {
+.report-editor {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -731,7 +732,7 @@ textarea,
   min-height: 32px;
   flex-shrink: 0;
 }
-.report-markdown-editor {
+.report-document-editor {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -740,47 +741,24 @@ textarea,
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-.report-markdown-editor:focus-within {
+.report-document-editor:focus-within {
   border-color: var(--ring);
 }
-.report-markdown-editor[data-disabled] {
+.report-document-editor[data-disabled] {
   opacity: 0.6;
-}
-.report-format-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 6px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.report-code-editor {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  font-size: 14px;
-}
-.report-code-editor .cm-editor {
-  height: 100%;
 }
 .report-status-bar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  min-height: 24px;
-  padding: 2px 10px;
+  min-height: 36px;
+  padding: 4px 10px;
+  justify-content: space-between;
+  gap: 8px;
   border-top: 1px solid var(--border);
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 18px;
-}
-.report-preview-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-wrap: anywhere;
-  line-height: 1.8;
-  padding: 16px;
 }
 .report-error {
   display: flex;
@@ -788,100 +766,6 @@ textarea,
   justify-content: space-between;
   gap: 8px;
   color: var(--destructive);
-}
-
-.report-markdown-content > :first-child {
-  margin-top: 0;
-}
-.report-markdown-content :where(p, ul, ol, blockquote, pre, table) {
-  margin: 0 0 16px;
-}
-.report-markdown-content :where(h1, h2, h3, h4, h5, h6) {
-  font-weight: 600;
-  line-height: 1.4;
-  margin: 24px 0 12px;
-}
-.report-markdown-content h1 {
-  font-size: 24px;
-}
-.report-markdown-content h2 {
-  font-size: 20px;
-}
-.report-markdown-content h3 {
-  font-size: 17px;
-}
-.report-markdown-content :where(h4, h5, h6) {
-  font-size: 14px;
-}
-.report-markdown-content ul {
-  list-style: disc;
-  padding-left: 24px;
-}
-.report-markdown-content ol {
-  list-style: decimal;
-  padding-left: 24px;
-}
-.report-markdown-content li > :where(ul, ol) {
-  margin-bottom: 0;
-}
-.report-markdown-content .contains-task-list {
-  list-style: none;
-  padding-left: 4px;
-}
-.report-markdown-content .task-list-item input {
-  margin-right: 8px;
-  accent-color: var(--primary);
-}
-.report-markdown-content blockquote {
-  border-left: 3px solid var(--border);
-  color: var(--muted-foreground);
-  padding-left: 16px;
-}
-.report-markdown-content blockquote > p:last-child {
-  margin-bottom: 0;
-}
-.report-markdown-content :not(pre) > code {
-  border-radius: 4px;
-  background: var(--muted);
-  padding: 2px 5px;
-  font-size: 0.9em;
-}
-.report-markdown-content pre {
-  overflow-x: auto;
-  padding: 12px;
-  border-radius: var(--radius);
-  background: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.report-markdown-content pre code {
-  white-space: pre;
-}
-.report-markdown-content table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-}
-.report-markdown-content :where(th, td) {
-  border: 1px solid var(--border);
-  padding: 6px 12px;
-}
-.report-markdown-content th {
-  background: var(--muted);
-  font-weight: 600;
-}
-.report-markdown-content a {
-  color: var(--primary);
-  text-decoration: underline;
-}
-.report-markdown-content img {
-  max-width: 100%;
-  height: auto;
-}
-.report-markdown-content hr {
-  border-top: 1px solid var(--border);
-  margin: 20px 0;
 }
 
 .report-actions {
@@ -899,4 +783,45 @@ textarea,
 :root:not(.dark) ::selection {
   background: color-mix(in srgb, var(--primary) 20%, transparent);
   color: var(--foreground);
+}
+
+.report-textbus {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.report-textbus-toolbar {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.report-textbus-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 24px 32px;
+  background: var(--card);
+}
+.report-textbus-body .xnote-root,
+.report-textbus-body .xnote-content {
+  color: var(--foreground);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.report-textbus-body .xnote-table-content {
+  background: var(--card);
+  color: var(--foreground);
+}
+.report-textbus-body .xnote-root {
+  min-height: 100%;
+}
+
+.report-textbus-toolbar .xnote-static-toolbar {
+  padding: 0;
+  flex-wrap: wrap;
+  row-gap: 4px;
 }

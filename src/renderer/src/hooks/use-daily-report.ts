@@ -1,28 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { validDate, type ReportAutoSaveInterval } from '../../../shared/model'
+import { type ReportAutoSaveInterval } from '../../../shared/model'
 
-const storageKey = 'dayflow.daily-reports.v1'
-const migratedKey = 'dayflow.daily-reports.migrated.v1'
 type Reports = Record<string, string>
 type ReportError = 'read' | 'save' | 'conflict' | null
 type ReportState = {
   reports: Reports
   saved: Reports
   error: ReportError
-}
-
-function legacyReports(): Reports {
-  if (localStorage.getItem(migratedKey) === 'true') return {}
-  const raw = localStorage.getItem(storageKey)
-  if (raw === null) return {}
-  const value: unknown = JSON.parse(raw)
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error('Invalid reports')
-  if (
-    Object.entries(value).some(([date, content]) => !validDate(date) || typeof content !== 'string')
-  )
-    throw new Error('Invalid report')
-  return value as Reports
 }
 
 function changedDates(state: ReportState): string[] {
@@ -75,17 +59,11 @@ export function useDailyReport(
     setLoading(true)
     loaded.current = false
     try {
-      const result = await window.api.reports(legacyReports())
+      const result = await window.api.reports()
       if (request !== readId.current) return
       if (!result.ok) throw new Error(result.error)
       assign({ reports: result.value, saved: result.value, error: null })
       loaded.current = true
-      // Keep the original localStorage content as a migration backup.
-      try {
-        localStorage.setItem(migratedKey, 'true')
-      } catch {
-        /* disk data is already saved */
-      }
     } catch {
       if (request === readId.current) assign({ ...stateRef.current, error: 'read' })
     } finally {

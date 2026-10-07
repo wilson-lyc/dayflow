@@ -1,8 +1,7 @@
 import { useRef, useState } from 'react'
-import { Code, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import type { Locale } from '../../../shared/model'
 import { DailyReportEditor } from './daily-report-editor'
-import { DailyReportPreview } from './daily-report-preview'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
@@ -45,7 +44,6 @@ export function DailyReportModule({
   onDelete,
   ...editorProps
 }: DailyReportModuleProps): React.JSX.Element {
-  const [preview, setPreview] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -106,41 +104,12 @@ export function DailyReportModule({
 
   return (
     <div className="h-full min-h-0 min-w-0">
-      <div hidden={preview} className="h-full min-h-0">
-        <DailyReportEditor
-          {...editorProps}
-          disabled={editorProps.disabled || deleteOpen}
-          showTitle={false}
-          onPreview={() => setPreview(true)}
-          toolbarActions={deleteAction}
-        />
-      </div>
-      {preview && (
-        <DailyReportPreview
-          content={editorProps.content}
-          locale={editorProps.locale}
-          actions={
-            <div className="flex items-center gap-1">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={t('reportReturnEdit')}
-                      onClick={() => setPreview(false)}
-                    >
-                      <Code data-icon="inline-start" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>{t('reportReturnEdit')}</TooltipContent>
-              </Tooltip>
-              {deleteAction}
-            </div>
-          }
-        />
-      )}
+      <DailyReportEditor
+        {...editorProps}
+        disabled={editorProps.disabled || deleteOpen}
+        showTitle={false}
+        statusActions={deleteAction}
+      />
       <AlertDialog
         open={deleteOpen}
         onOpenChange={(open) => {
@@ -176,7 +145,6 @@ export function DailyReportModule({
                 try {
                   if (await onDelete()) {
                     setDeleteOpen(false)
-                    setPreview(false)
                   } else setDeleteFailed(true)
                 } catch {
                   setDeleteFailed(true)

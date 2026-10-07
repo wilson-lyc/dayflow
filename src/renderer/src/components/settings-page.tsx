@@ -4,7 +4,7 @@ import type { Locale } from '../../../shared/model'
 import { translator } from '../lib/i18n'
 import { Button } from './ui/button'
 
-export type SettingsModule = 'general' | 'note' | 'report' | 'trash'
+export type SettingsModule = 'general' | 'note' | 'report' | 'trash' | 'llm'
 
 export function SettingsPage({
   locale,
@@ -26,7 +26,7 @@ export function SettingsPage({
     <div className="settings-layout" data-detail-open={detailOpen}>
       <nav className="settings-menu" aria-label={t('settings')}>
         <div className="settings-menu-group">
-          {(['general', 'note', 'report'] as const).map((module) => (
+          {(['general', 'note', 'report', 'llm'] as const).map((module) => (
             <Button
               key={module}
               variant={
@@ -49,7 +49,9 @@ export function SettingsPage({
       </nav>
       <section className="settings-content" key={active} aria-labelledby="settings-heading">
         <div className="settings-content-inner">
-          <h1 id="settings-heading">{t(active === 'trash' ? 'note' : active)}</h1>
+          {active !== 'llm' && (
+            <h1 id="settings-heading">{t(active === 'trash' ? 'note' : active)}</h1>
+          )}
           {contents[active]}
         </div>
       </section>

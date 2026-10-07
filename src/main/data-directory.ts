@@ -104,7 +104,7 @@ export class DataDirectory {
     if (!validDate(date)) throw new ServiceError('time')
     const folder = join(this.root, 'reports')
     if (existsSync(folder) && !lstatSync(folder).isDirectory()) throw new ServiceError('storage')
-    return join(folder, `${date}.md`)
+    return join(folder, `${date}.json`)
   }
 
   createReport(date: string): string {
@@ -117,12 +117,17 @@ export class DataDirectory {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') return this.readReport(date)
       throw error
     }
+    const content = JSON.stringify({
+      name: 'RootComponent',
+      state: { content: { schema: [3], content: [], attributes: {}, formats: {}, state: {} } }
+    })
     try {
+      writeFileSync(descriptor, content, 'utf8')
       fsyncSync(descriptor)
     } finally {
       closeSync(descriptor)
     }
-    return ''
+    return content
   }
 
   readReport(date: string): string {
@@ -141,36 +146,14 @@ export class DataDirectory {
     return null
   }
 
-  reports(legacy: unknown): Record<string, string> {
-    const marker = join(this.root, 'legacy-reports-imported.json')
-    if (!existsSync(marker)) {
-      if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy))
-        throw new ServiceError('state')
-      const entries = Object.entries(legacy)
-      if (entries.some(([date, content]) => !validDate(date) || typeof content !== 'string'))
-        throw new ServiceError('state')
-      for (const [date, content] of entries as [string, string][]) {
-        const path = this.reportPath(date)
-        if (!existsSync(path)) {
-          mkdirSync(dirname(path), { recursive: true })
-          atomicWrite(path, content)
-        } else if (this.readReport(date) !== content) {
-          const backup = join(this.root, 'backups', 'legacy-reports')
-          mkdirSync(backup, { recursive: true })
-          const backupPath = join(backup, `${date}.md`)
-          if (existsSync(backupPath) && readFileSync(backupPath, 'utf8') !== content)
-            throw new ServiceError('state')
-          atomicWrite(backupPath, content)
-        }
-      }
-      atomicWrite(marker, JSON.stringify({ importedAt: new Date().toISOString() }))
-    }
+  reports(): Record<string, string> {
     const folder = dirname(this.reportPath('2000-01-01'))
     const result: Record<string, string> = {}
     if (!existsSync(folder)) return result
     for (const entry of readdirSync(folder, { withFileTypes: true })) {
-      const date = entry.name.replace(/\.md$/, '')
-      if (entry.name.endsWith('.md') && validDate(date)) result[date] = this.readReport(date)
+      const date = entry.name.replace(/\.json$/, '')
+      if (entry.isFile() && entry.name.endsWith('.json') && validDate(date))
+        result[date] = this.readReport(date)
     }
     return result
   }

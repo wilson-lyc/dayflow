@@ -96,6 +96,11 @@ else {
         }
       })
     }
+    handle('llm-providers', store.llmProviders)
+    handle('save-provider', store.saveProvider)
+    handle('delete-provider', store.deleteProvider)
+    handle('save-model', store.saveModel)
+    handle('delete-model', store.deleteModel)
     handle('bootstrap', store.bootstrap)
     handle('list', store.list)
     handle('find', store.find)

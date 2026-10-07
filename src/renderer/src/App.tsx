@@ -29,6 +29,7 @@ import { DailyReportModule, type DailyReportModuleProps } from './components/dai
 import { useDailyReport } from './hooks/use-daily-report'
 import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
+import { LLMSettings } from './components/llm-settings'
 import { PreferenceContent } from './components/preference-content'
 import { TrashContent } from './components/trash-content'
 import { QuickNotesModule, type QuickNotesModuleProps } from './components/quick-notes-module'
@@ -310,8 +311,13 @@ function App(): React.JSX.Element {
     }
   }
   const closeHandler = useRef<() => void>(() => {})
+  const llmCloseGuard = useRef<(() => boolean) | null>(null)
   useLayoutEffect(() => {
     closeHandler.current = () => {
+      if (llmCloseGuard.current?.()) {
+        api.cancelClose()
+        return
+      }
       if (busyRef.current) {
         deferredClose.current = true
         return
@@ -741,13 +747,13 @@ function App(): React.JSX.Element {
                   render={
                     <Button
                       variant="header-ghost"
-                      size="icon"
                       id="settings-entry"
                       aria-label={t('settings')}
                       disabled={busy}
                       onClick={() => protect(() => navigate('settings'))}
                     >
-                      <Settings />
+                      <Settings data-icon="inline-start" />
+                      {t('settings')}
                     </Button>
                   }
                 />
@@ -801,6 +807,7 @@ function App(): React.JSX.Element {
           disabled={busy}
           onChange={selectSettingsModule}
           contents={{
+            llm: <LLMSettings locale={locale} closeGuardRef={llmCloseGuard} />,
             general: <PreferenceContent module="general" {...preferenceProps} />,
             report: <PreferenceContent module="report" {...preferenceProps} />,
             note: (

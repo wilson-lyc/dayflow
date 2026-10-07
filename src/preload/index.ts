@@ -8,6 +8,11 @@ function subscribe<T>(channel: string, callback: (value: T) => void): () => void
   }
 }
 const api: DayflowAPI = {
+  llmProviders: () => ipcRenderer.invoke('dayflow:llm-providers'),
+  saveProvider: (input) => ipcRenderer.invoke('dayflow:save-provider', input),
+  deleteProvider: (id) => ipcRenderer.invoke('dayflow:delete-provider', id),
+  saveModel: (input) => ipcRenderer.invoke('dayflow:save-model', input),
+  deleteModel: (id) => ipcRenderer.invoke('dayflow:delete-model', id),
   bootstrap: () => ipcRenderer.invoke('dayflow:bootstrap'),
   list: (date) => ipcRenderer.invoke('dayflow:list', date),
   find: (id) => ipcRenderer.invoke('dayflow:find', id),
@@ -15,7 +20,7 @@ const api: DayflowAPI = {
   edit: (id, content, at, zone) => ipcRenderer.invoke('dayflow:edit', id, content, at, zone),
   change: (id, action) => ipcRenderer.invoke('dayflow:change', id, action),
   preference: (key, value) => ipcRenderer.invoke('dayflow:preference', key, value),
-  reports: (legacy) => ipcRenderer.invoke('dayflow:reports', legacy),
+  reports: () => ipcRenderer.invoke('dayflow:reports'),
   saveReports: (writes) => ipcRenderer.invoke('dayflow:save-reports', writes),
   createReport: (date) => ipcRenderer.invoke('dayflow:create-report', date),
   deleteReport: (date, previous) => ipcRenderer.invoke('dayflow:delete-report', date, previous),

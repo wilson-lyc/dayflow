@@ -58,7 +58,41 @@ export interface Bootstrap {
   platform: string
   dataDirectory: string
 }
+export type ModelParameters = Record<string, unknown>
+export interface LLMModel {
+  id: string
+  providerId: string
+  name: string
+  modelId: string
+  parameters: ModelParameters
+}
+export interface LLMProvider {
+  id: string
+  name: string
+  baseUrl: string
+  hasApiKey: boolean
+  models: LLMModel[]
+}
+export interface ProviderWrite {
+  id: string | null
+  name: string
+  baseUrl: string
+  // undefined preserves the saved key; an empty string clears it.
+  apiKey?: string
+}
+export interface ModelWrite {
+  id: string | null
+  providerId: string
+  name: string
+  modelId: string
+  parameters: ModelParameters
+}
 export interface DayflowAPI {
+  llmProviders(): Promise<Result<LLMProvider[]>>
+  saveProvider(input: ProviderWrite): Promise<Result<LLMProvider[]>>
+  deleteProvider(id: string): Promise<Result<LLMProvider[]>>
+  saveModel(input: ModelWrite): Promise<Result<LLMProvider[]>>
+  deleteModel(id: string): Promise<Result<LLMProvider[]>>
   bootstrap(): Promise<Result<Bootstrap>>
   list(date: string | null): Promise<Result<Log[]>>
   find(id: string): Promise<Result<Log | null>>
@@ -71,7 +105,7 @@ export interface DayflowAPI {
   ): Promise<Result<Log>>
   change(id: string, action: 'trash' | 'restore' | 'delete'): Promise<Result<Log | null>>
   preference(key: keyof Preferences, value: string): Promise<Result<Preferences>>
-  reports(legacy: Record<string, string>): Promise<Result<Record<string, string>>>
+  reports(): Promise<Result<Record<string, string>>>
   saveReports(writes: ReportWrite[]): Promise<Result<Record<string, string>>>
   createReport(date: string): Promise<Result<string>>
   deleteReport(date: string, previous: string): Promise<Result<null>>

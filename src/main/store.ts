@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { app, nativeTheme } from 'electron'
+import { app, nativeTheme, safeStorage } from 'electron'
 import {
   localDate,
   isReportAutoSaveInterval,
@@ -11,7 +11,10 @@ import {
   type Log,
   type Preferences,
   type Bootstrap,
-  type ReportWrite
+  type ReportWrite,
+  type ProviderWrite,
+  type ModelWrite,
+  type LLMProvider
 } from '../shared/model'
 
 import { isLocale, resolveLocale } from '../shared/languages'
@@ -66,9 +69,9 @@ function database(): DatabaseSync {
             .get()!.version
         )
       : 0
-    if (version > 1) throw new ServiceError('version')
+    if (version > 2) throw new ServiceError('version')
     candidate.exec(
-      'PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 3000;'
+      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 3000;'
     )
     if (version === 0) {
       // This project has no earlier business schema. Never overwrite an unknown existing logs table.
@@ -85,6 +88,20 @@ function database(): DatabaseSync {
         CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY CHECK(version>0), applied_at INTEGER NOT NULL);`)
       candidate.prepare('INSERT INTO schema_migrations VALUES(1,?)').run(Date.now())
+      candidate.exec('COMMIT')
+    }
+    if (version < 2) {
+      candidate.exec(`BEGIN IMMEDIATE;
+        CREATE TABLE llm_providers (
+          id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, base_url TEXT NOT NULL,
+          api_key BLOB, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE llm_models (
+          id TEXT PRIMARY KEY NOT NULL, provider_id TEXT NOT NULL REFERENCES llm_providers(id) ON DELETE CASCADE,
+          name TEXT NOT NULL, model_id TEXT NOT NULL, parameters_json TEXT NOT NULL CHECK(json_valid(parameters_json)),
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+          UNIQUE(provider_id, model_id));
+        CREATE INDEX idx_llm_models_provider ON llm_models(provider_id);`)
+      candidate.prepare('INSERT INTO schema_migrations VALUES(2,?)').run(Date.now())
       candidate.exec('COMMIT')
     }
     candidate
@@ -242,9 +259,9 @@ export function bootstrap(): Bootstrap {
   }
 }
 
-export function reports(legacy: unknown): Record<string, string> {
+export function reports(): Record<string, string> {
   database()
-  return dataFiles().reports(legacy)
+  return dataFiles().reports()
 }
 export function saveReports(writes: ReportWrite[]): Record<string, string> {
   database()
@@ -283,4 +300,152 @@ export function migrateDataDirectory(path: string): string {
       }
     }
   )
+}
+
+export function llmProviders(): LLMProvider[] {
+  const connection = database()
+  const models = connection.prepare('SELECT * FROM llm_models ORDER BY created_at,id').all()
+  return connection
+    .prepare('SELECT * FROM llm_providers ORDER BY created_at,id')
+    .all()
+    .map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      baseUrl: String(row.base_url),
+      hasApiKey: row.api_key !== null,
+      models: models
+        .filter((model) => model.provider_id === row.id)
+        .map((model) => ({
+          id: String(model.id),
+          providerId: String(model.provider_id),
+          name: String(model.name),
+          modelId: String(model.model_id),
+          parameters: JSON.parse(String(model.parameters_json))
+        }))
+    }))
+}
+function configurationText(value: unknown, max = 200): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > max)
+    throw new ServiceError('state')
+  return value.trim()
+}
+export function saveProvider(input: ProviderWrite): LLMProvider[] {
+  if (!input || (input.id !== null && typeof input.id !== 'string')) throw new ServiceError('state')
+  const name = configurationText(input.name)
+  const baseUrl = configurationText(input.baseUrl, 2048)
+  try {
+    const url = new URL(baseUrl)
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error('url')
+  } catch {
+    throw new ServiceError('state')
+  }
+  const connection = database()
+  const previous =
+    input.id === null
+      ? null
+      : connection.prepare('SELECT * FROM llm_providers WHERE id=?').get(input.id)
+  if (input.id !== null && !previous) throw new ServiceError('state')
+  let key = previous?.api_key ?? null
+  if (input.apiKey !== undefined) {
+    if (typeof input.apiKey !== 'string' || input.apiKey.length > 8192)
+      throw new ServiceError('state')
+    if (input.apiKey.trim()) {
+      if (!safeStorage.isEncryptionAvailable()) throw new ServiceError('storage')
+      key = new Uint8Array(safeStorage.encryptString(input.apiKey.trim()))
+    } else key = null
+  }
+  const now = Date.now()
+  connection
+    .prepare(
+      `INSERT INTO llm_providers VALUES(?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name,base_url=excluded.base_url,api_key=excluded.api_key,updated_at=excluded.updated_at`
+    )
+    .run(
+      input.id ?? randomUUID(),
+      name,
+      baseUrl,
+      key,
+      previous ? Number(previous.created_at) : now,
+      now
+    )
+  return llmProviders()
+}
+export function deleteProvider(id: string): LLMProvider[] {
+  if (
+    typeof id !== 'string' ||
+    database().prepare('DELETE FROM llm_providers WHERE id=?').run(id).changes !== 1
+  )
+    throw new ServiceError('state')
+  return llmProviders()
+}
+export function saveModel(input: ModelWrite): LLMProvider[] {
+  if (
+    !input ||
+    typeof input.providerId !== 'string' ||
+    (input.id !== null && typeof input.id !== 'string')
+  )
+    throw new ServiceError('state')
+  const name = configurationText(input.name)
+  const modelId = configurationText(input.modelId)
+  if (!input.parameters || typeof input.parameters !== 'object' || Array.isArray(input.parameters))
+    throw new ServiceError('state')
+  const parameters = JSON.stringify(input.parameters)
+  if (parameters.length > 20000) throw new ServiceError('too-long')
+  const { think, temperature, max_tokens: maxTokens } = input.parameters
+  if (
+    (think !== undefined && typeof think !== 'boolean') ||
+    (temperature !== undefined &&
+      (typeof temperature !== 'number' ||
+        !Number.isFinite(temperature) ||
+        temperature < 0 ||
+        temperature > 2)) ||
+    (maxTokens !== undefined &&
+      (typeof maxTokens !== 'number' || !Number.isSafeInteger(maxTokens) || maxTokens < 1))
+  )
+    throw new ServiceError('state')
+  const connection = database()
+  if (!connection.prepare('SELECT id FROM llm_providers WHERE id=?').get(input.providerId))
+    throw new ServiceError('state')
+  const previous =
+    input.id === null
+      ? null
+      : connection
+          .prepare('SELECT * FROM llm_models WHERE id=? AND provider_id=?')
+          .get(input.id, input.providerId)
+  if (input.id !== null && !previous) throw new ServiceError('state')
+  const duplicate = connection
+    .prepare('SELECT id FROM llm_models WHERE provider_id=? AND model_id=?')
+    .get(input.providerId, modelId)
+  if (duplicate && duplicate.id !== input.id) throw new ServiceError('conflict')
+  const now = Date.now()
+  connection
+    .prepare(
+      `INSERT INTO llm_models VALUES(?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name,model_id=excluded.model_id,parameters_json=excluded.parameters_json,updated_at=excluded.updated_at`
+    )
+    .run(
+      input.id ?? randomUUID(),
+      input.providerId,
+      name,
+      modelId,
+      parameters,
+      previous ? Number(previous.created_at) : now,
+      now
+    )
+  return llmProviders()
+}
+export function deleteModel(id: string): LLMProvider[] {
+  if (
+    typeof id !== 'string' ||
+    database().prepare('DELETE FROM llm_models WHERE id=?').run(id).changes !== 1
+  )
+    throw new ServiceError('state')
+  return llmProviders()
 }
