@@ -14,6 +14,7 @@ export function ResponsiveSplit({
   secondaryMinWidth,
   resizeLabel,
   className,
+  onSecondaryVisibleChange,
   secondaryVisible = null
 }: {
   primary: (secondaryShown: boolean) => ReactNode
@@ -22,6 +23,7 @@ export function ResponsiveSplit({
   secondaryMinWidth: number
   resizeLabel: string
   className?: string
+  onSecondaryVisibleChange?: (visible: boolean) => void
   secondaryVisible?: boolean | null
 }): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null)
@@ -29,6 +31,9 @@ export function ResponsiveSplit({
   const [layout, setLayout] = useState<Record<string, number> | undefined>()
   const minimum = primaryMinWidth + secondaryMinWidth + handleWidth
   const shown = secondaryVisible ?? width >= minimum
+  useLayoutEffect(() => {
+    onSecondaryVisibleChange?.(shown)
+  }, [shown, onSecondaryVisibleChange])
   useLayoutEffect(() => {
     const element = container.current
     if (!element) return

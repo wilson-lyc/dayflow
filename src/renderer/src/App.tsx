@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, NotebookPen, Settings } from 'lucide-react'
 import { Button } from './components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from './components/ui/tooltip'
 import { Textarea } from './components/ui/textarea'
 import { Input } from './components/ui/input'
 import { Field, FieldGroup, FieldLabel, FieldError } from './components/ui/field'
@@ -24,7 +25,6 @@ import {
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
 import { DailyReportEditor } from './components/daily-report-editor'
-import { DailyReportPage } from './components/daily-report-page'
 import { useDailyReport } from './hooks/use-daily-report'
 import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
@@ -49,7 +49,7 @@ import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
 import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
 
-type View = 'daily' | 'report' | 'settings'
+type View = 'daily' | 'settings'
 type ListScope = 'daily' | 'trash'
 type Editor = {
   log: Log
@@ -76,6 +76,8 @@ function App(): React.JSX.Element {
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<ErrorCode | null>(null)
   const [view, setView] = useState<View>('daily')
+  const [homeReportVisible, setHomeReportVisible] = useState(false)
+  const [activeHomeCard, setActiveHomeCard] = useState<'notes' | 'report'>('notes')
   const viewRef = useRef<View>('daily')
   const [settingsModule, setSettingsModule] = useState<SettingsModule>('general')
   const settingsModuleRef = useRef<SettingsModule>('general')
@@ -499,8 +501,7 @@ function App(): React.JSX.Element {
         : 'unsaved'
   const confirmHint: MessageKey =
     confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
-  const dateChange = (selected: string): void =>
-    protect(() => navigate(viewRef.current === 'report' ? 'report' : 'daily', selected))
+  const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
   const reportProps = {
     ...report,
     onRetry: report.retry,
@@ -527,15 +528,22 @@ function App(): React.JSX.Element {
         {view !== 'settings' ? (
           <>
             <div className="date-navigation">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t('previous')}
-                disabled={busy}
-                onClick={() => dateChange(shiftDay(date, -1))}
-              >
-                <ChevronLeft />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="header-ghost"
+                      size="icon"
+                      aria-label={t('previous')}
+                      disabled={busy}
+                      onClick={() => dateChange(shiftDay(date, -1))}
+                    >
+                      <ChevronLeft />
+                    </Button>
+                  }
+                />
+                <TooltipContent side="top">{t('previous')}</TooltipContent>
+              </Tooltip>
               <DatePicker
                 date={date}
                 locale={locale}
@@ -545,42 +553,70 @@ function App(): React.JSX.Element {
                 disabled={busy}
                 onChange={dateChange}
               />
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t('next')}
-                disabled={busy || date >= clockDate}
-                onClick={() => dateChange(shiftDay(date, 1))}
-              >
-                <ChevronRight />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="header-ghost"
+                      size="icon"
+                      aria-label={t('next')}
+                      disabled={busy || date >= clockDate}
+                      onClick={() => dateChange(shiftDay(date, 1))}
+                    >
+                      <ChevronRight />
+                    </Button>
+                  }
+                />
+                <TooltipContent side="top">{t('next')}</TooltipContent>
+              </Tooltip>
             </div>
             <div className="top-spacer" />
             <nav className="top-actions">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => protect(() => navigate(view === 'report' ? 'daily' : 'report'))}
-              >
-                {t(view === 'report' ? 'home' : 'report')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                id="settings-entry"
-                aria-label={t('settings')}
-                disabled={busy}
-                onClick={() => protect(() => navigate('settings'))}
-              >
-                <Settings />
-              </Button>
+              {!homeReportVisible && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="header-ghost"
+                        size="icon"
+                        aria-label={t(activeHomeCard === 'report' ? 'note' : 'report')}
+                        disabled={busy}
+                        onClick={() =>
+                          setActiveHomeCard((card) => (card === 'notes' ? 'report' : 'notes'))
+                        }
+                      >
+                        {activeHomeCard === 'report' ? <NotebookPen /> : <FileText />}
+                      </Button>
+                    }
+                  />
+                  <TooltipContent side="top">
+                    {t(activeHomeCard === 'report' ? 'note' : 'report')}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="header-ghost"
+                      size="icon"
+                      id="settings-entry"
+                      aria-label={t('settings')}
+                      disabled={busy}
+                      onClick={() => protect(() => navigate('settings'))}
+                    >
+                      <Settings />
+                    </Button>
+                  }
+                />
+                <TooltipContent side="top">{t('settings')}</TooltipContent>
+              </Tooltip>
             </nav>
           </>
         ) : (
           <>
             <Button
-              variant="ghost"
+              variant="header-ghost"
               disabled={busy}
               onClick={() => protect(() => navigate('daily'))}
             >
@@ -663,10 +699,10 @@ function App(): React.JSX.Element {
             )
           }}
         />
-      ) : view === 'report' ? (
-        <DailyReportPage date={date} {...reportProps} />
       ) : (
         <HomePage
+          activeCard={activeHomeCard}
+          onReportVisibleChange={setHomeReportVisible}
           resizeLabel={t('resizeNotesReport')}
           report={<DailyReportEditor {...reportProps} showTitle={false} />}
           notes={

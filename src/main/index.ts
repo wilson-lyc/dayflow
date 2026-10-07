@@ -16,7 +16,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
-    minWidth: 760,
+    minWidth: 460,
     minHeight: 560,
     show: false,
     title: 'Dayflow',
