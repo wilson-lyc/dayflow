@@ -26,6 +26,7 @@ export const en = {
   report: 'Daily report',
   reportEdit: 'Edit daily report',
   reportPreview: 'Preview',
+  reportReturnEdit: 'Back to editing',
   reportPlaceholder: 'Write your daily report…',
   reportEmpty: 'No report yet',
   reportReadError: 'Unable to read daily reports',

@@ -6,12 +6,10 @@ import { translator } from '../lib/i18n'
 
 export function DailyReportPreview({
   content,
-  date,
   locale,
   actions
 }: {
   content: string
-  date: string
   locale: Locale
   actions?: ReactNode
 }): React.JSX.Element {
@@ -23,18 +21,11 @@ export function DailyReportPreview({
         {actions}
       </div>
       <article className="report-preview-content">
-        <h1 className="report-preview-title">
-          {t('report')} · {date}
-        </h1>
-        {content.trim() ? (
-          <div className="report-markdown-content">
-            <Markdown remarkPlugins={[remarkGfm]} skipHtml>
-              {content}
-            </Markdown>
-          </div>
-        ) : (
-          <p className="text-muted-foreground">{t('reportEmpty')}</p>
-        )}
+        <div className="report-markdown-content">
+          <Markdown remarkPlugins={[remarkGfm]} skipHtml>
+            {content}
+          </Markdown>
+        </div>
       </article>
     </section>
   )

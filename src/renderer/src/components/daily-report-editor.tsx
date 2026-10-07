@@ -11,7 +11,8 @@ import {
   Link,
   Quote,
   Code,
-  Save
+  Save,
+  Eye
 } from 'lucide-react'
 import type { Locale } from '../../../shared/model'
 import { translator } from '../lib/i18n'
@@ -23,6 +24,7 @@ export type DailyReportEditorProps = {
   disabled?: boolean
   dirty: boolean
   onSave: () => void
+  onPreview?: () => void
   error?: 'read' | 'save' | null
   actions?: ReactNode
   showTitle?: boolean
@@ -113,6 +115,7 @@ export function DailyReportEditor({
   disabled,
   dirty,
   onSave,
+  onPreview,
   error,
   actions,
   showTitle = true,
@@ -184,6 +187,18 @@ export function DailyReportEditor({
           >
             <Save data-icon="inline-start" />
           </Button>
+          {onPreview && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('reportPreview')}
+              title={t('reportPreview')}
+              disabled={locked}
+              onClick={onPreview}
+            >
+              <Eye data-icon="inline-start" />
+            </Button>
+          )}
         </div>
         <CodeMirror
           ref={editor}

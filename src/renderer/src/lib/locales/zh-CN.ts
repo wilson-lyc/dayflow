@@ -27,6 +27,7 @@ export const zh: Record<MessageKey, string> = {
   report: '日报',
   reportEdit: '编辑日报',
   reportPreview: '预览',
+  reportReturnEdit: '返回编辑',
   reportPlaceholder: '写下今天的工作与总结……',
   reportEmpty: '暂无日报内容',
   reportReadError: '日报读取失败',

@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { CalendarDays, Clock } from 'lucide-react'
 import { enUS, zhCN } from 'react-day-picker/locale'
 import { Button } from './ui/button'
-import { Calendar } from './ui/calendar'
+import { MonthGridCalendar as Calendar } from './month-grid-calendar'
 import { Field, FieldError, FieldGroup } from './ui/field'
 import { InputGroup, InputGroupAddon, InputGroupInput } from './ui/input-group'
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './ui/popover'
@@ -79,6 +79,7 @@ export function DateTimePicker({
             week: 'mt-1 flex w-full'
           }}
           mode="single"
+          required
           captionLayout="dropdown"
           selected={parseDay(date)}
           defaultMonth={parseDay(date)}

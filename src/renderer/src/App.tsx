@@ -24,7 +24,7 @@ import {
   AlertDialogFooter
 } from './components/ui/alert-dialog'
 import { DatePicker } from './components/date-picker'
-import { DailyReportEditor } from './components/daily-report-editor'
+import { DailyReport } from './components/daily-report'
 import { useDailyReport } from './hooks/use-daily-report'
 import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
@@ -548,6 +548,7 @@ function App(): React.JSX.Element {
                 date={date}
                 locale={locale}
                 label={selectedLabel}
+                triggerVariant="header-ghost"
                 showToday
                 max={clockDate}
                 disabled={busy}
@@ -704,7 +705,7 @@ function App(): React.JSX.Element {
           activeCard={activeHomeCard}
           onReportVisibleChange={setHomeReportVisible}
           resizeLabel={t('resizeNotesReport')}
-          report={<DailyReportEditor {...reportProps} showTitle={false} />}
+          report={<DailyReport key={date} {...reportProps} showTitle={false} />}
           notes={
             <QuickNotesBlock
               listRef={listRef}

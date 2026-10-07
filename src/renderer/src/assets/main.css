@@ -571,8 +571,14 @@ textarea,
 .home-card-track > .home-block {
   flex: 0 0 calc(100% - 8px);
 }
-.home-report .report-editor {
+.home-report .report-editor,
+.home-report .report-preview {
   padding: 0;
+}
+.home-report .report-preview > .report-toolbar {
+  padding: 6px;
+  padding-left: 16px;
+  border-bottom: 1px solid var(--border);
 }
 .home-report .report-markdown-editor {
   border: 0;
@@ -687,11 +693,6 @@ textarea,
   overflow-wrap: anywhere;
   line-height: 1.8;
   padding: 16px;
-}
-.report-preview-title {
-  margin: 0 0 20px;
-  font-size: 16px;
-  font-weight: 600;
 }
 .report-error {
   display: flex;
