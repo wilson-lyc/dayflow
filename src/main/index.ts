@@ -97,6 +97,7 @@ else {
       })
     }
     handle('llm-providers', store.llmProviders)
+    handle('fetch-provider-models', store.fetchProviderModels)
     handle('save-provider', store.saveProvider)
     handle('delete-provider', store.deleteProvider)
     handle('save-model', store.saveModel)

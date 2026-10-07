@@ -21,6 +21,12 @@ export function translator(
 export function errorKey(code: ErrorCode): MessageKey {
   return (
     {
+      'llm-auth': 'llmAuthError',
+      'llm-network': 'llmNetworkError',
+      'llm-timeout': 'llmTimeoutError',
+      'llm-unsupported': 'llmUnsupportedError',
+      'llm-response': 'llmResponseError',
+      'llm-key': 'llmKeyError',
       storage: 'operationError',
       empty: 'empty',
       'too-long': 'tooLong',

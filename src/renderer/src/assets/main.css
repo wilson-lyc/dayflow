@@ -494,6 +494,29 @@ textarea,
 .settings-content .settings-heading-row h1 {
   margin: 0;
 }
+[data-slot='dialog-content']::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+[data-slot='dialog-content']::-webkit-scrollbar-track {
+  margin-block: 12px;
+  background: transparent;
+}
+[data-slot='dialog-content']::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  background-clip: padding-box;
+}
+[data-slot='dialog-content']::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
+}
+[data-slot='dialog-content']::-webkit-scrollbar-button {
+  display: none;
+}
+[data-slot='dialog-content']::-webkit-scrollbar-corner {
+  background: transparent;
+}
 .settings-section {
   display: flex;
   flex-direction: column;
@@ -808,9 +831,10 @@ textarea,
 .report-textbus-body .xnote-root,
 .report-textbus-body .xnote-content {
   color: var(--foreground);
-  font-family: var(--font-ui);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
-  line-height: 1.8;
+  line-height: 24px;
 }
 .report-textbus-body .xnote-table-content {
   background: var(--card);
@@ -818,10 +842,85 @@ textarea,
 }
 .report-textbus-body .xnote-root {
   min-height: 100%;
+  max-width: 720px;
+  margin-inline: auto;
 }
 
 .report-textbus-toolbar .xnote-static-toolbar {
   padding: 0;
   flex-wrap: wrap;
   row-gap: 4px;
+}
+
+/* Report typography stays local to the document, outside editor menus. */
+.report-textbus-body .xnote-content .xnote-paragraph {
+  margin: 0 0 10px;
+}
+.report-textbus-body
+  .xnote-content
+  :is(.xnote-h1, .xnote-h2, .xnote-h3, .xnote-h4, .xnote-h5, .xnote-h6) {
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+.report-textbus-body .xnote-content .xnote-h1 {
+  font-size: 24px;
+}
+.report-textbus-body .xnote-content .xnote-h2 {
+  font-size: 20px;
+}
+.report-textbus-body .xnote-content .xnote-h3 {
+  font-size: 17px;
+}
+.report-textbus-body .xnote-content .xnote-h4 {
+  font-size: 15px;
+}
+.report-textbus-body .xnote-content :is(.xnote-h5, .xnote-h6) {
+  font-size: 14px;
+}
+.report-textbus-body
+  .xnote-content
+  .xnote-paragraph:has(:is(.xnote-h1, .xnote-h2, .xnote-h3, .xnote-h4, .xnote-h5, .xnote-h6)) {
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+.report-textbus-body .xnote-content > .xnote-paragraph:first-child {
+  margin-top: 0;
+}
+.report-textbus-body .xnote-content .xnote-list {
+  margin: 8px 0 12px;
+}
+.report-textbus-body .xnote-content .xnote-list > li {
+  padding-block: 2px;
+}
+.report-textbus-body .xnote-content .xnote-list-type {
+  color: var(--muted-foreground);
+}
+.report-textbus-body .xnote-content .xnote-todolist {
+  margin: 4px 0;
+  align-items: flex-start;
+}
+.report-textbus-body .xnote-content .xnote-todolist-icon {
+  margin-top: 4px;
+}
+.report-textbus-body .xnote-content .xnote-blockquote {
+  margin: 14px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+.report-textbus-body .xnote-content .xnote-blockquote .xnote-paragraph:last-child {
+  margin-bottom: 0;
+}
+.report-textbus-body .xnote-content .xnote-source-code {
+  margin-block: 14px;
+}
+.report-textbus-body .xnote-content .xnote-source-code pre {
+  font-size: 13px;
+  line-height: 22px;
+}
+.report-textbus-body .xnote-content .xnote-table {
+  margin-block: 16px;
+  font-size: 13px;
+  line-height: 22px;
 }

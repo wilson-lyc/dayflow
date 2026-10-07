@@ -8,6 +8,7 @@ function subscribe<T>(channel: string, callback: (value: T) => void): () => void
   }
 }
 const api: DayflowAPI = {
+  fetchProviderModels: (id) => ipcRenderer.invoke('dayflow:fetch-provider-models', id),
   llmProviders: () => ipcRenderer.invoke('dayflow:llm-providers'),
   saveProvider: (input) => ipcRenderer.invoke('dayflow:save-provider', input),
   deleteProvider: (id) => ipcRenderer.invoke('dayflow:delete-provider', id),

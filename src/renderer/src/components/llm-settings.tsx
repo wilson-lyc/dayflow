@@ -1,10 +1,20 @@
-import { useEffect, useId, useLayoutEffect, useState, type RefObject } from 'react'
-import { MoreHorizontal, Plus, Pencil, Trash2 } from 'lucide-react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { MoreHorizontal, Plus, Pencil, Trash2, LoaderCircle } from 'lucide-react'
 import type { LLMProvider, LLMModel, Locale, Result } from '../../../shared/model'
-import { translator } from '../lib/i18n'
+import { defaultModelParameters } from '../../../shared/model'
+import { translator, errorKey } from '../lib/i18n'
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxList,
+  ComboboxItem
+} from './ui/combobox'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
 import { Separator } from './ui/separator'
+import { ScrollArea } from './ui/scroll-area'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -49,7 +59,6 @@ type ModelDraft = {
   providerId: string
   name: string
   modelId: string
-  think: string
   temperature: string
   maxTokens: string
   extra: string
@@ -70,6 +79,21 @@ export function LLMSettings({
   const [error, setError] = useState<string | null>(null)
   const [provider, setProvider] = useState<ProviderDraft | null>(null)
   const [model, setModel] = useState<ModelDraft | null>(null)
+  const [remoteModels, setRemoteModels] = useState<string[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [modelListError, setModelListError] = useState<string | null>(null)
+  const [modelsFetched, setModelsFetched] = useState(false)
+  const [modelListOpen, setModelListOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const modelRequestRef = useRef(0)
+  const modelInputRef = useRef<HTMLInputElement>(null)
+  const modelEditorOpen = model !== null
+  useEffect(
+    () => () => {
+      modelRequestRef.current++
+    },
+    [modelEditorOpen, model?.id, model?.providerId]
+  )
   const [deletion, setDeletion] = useState<{
     kind: 'provider' | 'model'
     id: string
@@ -131,6 +155,7 @@ export function LLMSettings({
     if (busy) return
     if (dirty) setDiscard(true)
     else {
+      modelRequestRef.current++
       setProvider(null)
       setModel(null)
       setError(null)
@@ -150,20 +175,47 @@ export function LLMSettings({
     setError(null)
   }
   function editModel(providerId: string, value?: LLMModel): void {
-    const { think, temperature, max_tokens: maxTokens, ...extra } = value?.parameters ?? {}
+    setRemoteModels([])
+    setFetchingModels(false)
+    setModelListError(null)
+    setModelsFetched(false)
+    setModelListOpen(false)
+    setAdvancedOpen(false)
+    const { temperature, max_tokens: maxTokens, ...extra } = value?.parameters ?? {}
     const next: ModelDraft = {
       id: value?.id ?? null,
       providerId,
       name: value?.name ?? '',
       modelId: value?.modelId ?? '',
-      think: typeof think === 'boolean' ? String(think) : 'default',
-      temperature: temperature === undefined ? '' : String(temperature),
-      maxTokens: maxTokens === undefined ? '' : String(maxTokens),
+      temperature: String(temperature ?? defaultModelParameters.temperature),
+      maxTokens: String(maxTokens ?? defaultModelParameters.max_tokens),
       extra: Object.keys(extra).length ? JSON.stringify(extra, null, 2) : ''
     }
     setModel(next)
     setInitialDraft(JSON.stringify(next))
     setError(null)
+  }
+  async function fetchModels(): Promise<void> {
+    if (!model || fetchingModels) return
+    const request = ++modelRequestRef.current
+    setFetchingModels(true)
+    setModelListError(null)
+    try {
+      const result = await window.api.fetchProviderModels(model.providerId)
+      if (request !== modelRequestRef.current) return
+      if (!result.ok) {
+        setModelListError(t(errorKey(result.error)))
+        return
+      }
+      setRemoteModels(result.value)
+      setModelsFetched(true)
+      if (result.value.length > 0) modelInputRef.current?.focus()
+      setModelListOpen(result.value.length > 0)
+    } catch {
+      if (request === modelRequestRef.current) setModelListError(t('llmNetworkError'))
+    } finally {
+      if (request === modelRequestRef.current) setFetchingModels(false)
+    }
   }
   async function mutate(operation: () => Promise<Result<LLMProvider[]>>): Promise<void> {
     setBusy(true)
@@ -175,6 +227,7 @@ export function LLMSettings({
         return
       }
       setProviders(result.value)
+      modelRequestRef.current++
       setProvider(null)
       setModel(null)
       setDeletion(null)
@@ -219,15 +272,17 @@ export function LLMSettings({
         parameters = model.extra.trim() ? JSON.parse(model.extra) : {}
         if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters))
           throw new Error()
-        if (['think', 'temperature', 'max_tokens'].some((key) => Object.hasOwn(parameters, key)))
+        if (['temperature', 'max_tokens'].some((key) => Object.hasOwn(parameters, key)))
           throw new Error()
       } catch {
+        setAdvancedOpen(true)
         setError(t('llmInvalidParameters'))
         return
       }
       if (model.temperature.trim()) {
         const value = Number(model.temperature)
         if (!Number.isFinite(value) || value < 0 || value > 2) {
+          setAdvancedOpen(true)
           setError(t('llmInvalidTemperature'))
           return
         }
@@ -236,17 +291,19 @@ export function LLMSettings({
       if (model.maxTokens.trim()) {
         const value = Number(model.maxTokens)
         if (!Number.isSafeInteger(value) || value < 1) {
+          setAdvancedOpen(true)
           setError(t('llmInvalidTokens'))
           return
         }
         parameters.max_tokens = value
       }
-      if (model.think !== 'default') parameters.think = model.think === 'true'
+      parameters.temperature ??= defaultModelParameters.temperature
+      parameters.max_tokens ??= defaultModelParameters.max_tokens
       void mutate(() =>
         window.api.saveModel({
           id: model.id,
           providerId: model.providerId,
-          name: model.name,
+          name: model.name.trim() || model.modelId.trim(),
           modelId: model.modelId,
           parameters
         })
@@ -416,7 +473,7 @@ export function LLMSettings({
           if (!open) closeEditor()
         }}
       >
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
           <DialogHeader className="flex-row flex-wrap items-center gap-2 pr-6">
             <DialogTitle>
               {t(
@@ -436,105 +493,186 @@ export function LLMSettings({
               event.preventDefault()
               save()
             }}
-            className="flex flex-col gap-5"
+            className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-5"
           >
-            <FieldGroup>
-              {provider ? (
-                <>
-                  {textField(
-                    'name',
-                    t('llmName'),
-                    provider.name,
-                    (name) => setProvider({ ...provider, name }),
-                    { required: true, maxLength: 200 }
+            <ScrollArea className="-mx-1 min-h-0 overflow-hidden">
+              <div className="flex flex-col gap-5 px-1 py-1 pr-3">
+                <FieldGroup>
+                  {provider ? (
+                    <>
+                      {textField(
+                        'name',
+                        t('llmName'),
+                        provider.name,
+                        (name) => setProvider({ ...provider, name }),
+                        { required: true, maxLength: 200 }
+                      )}
+                      {textField(
+                        'url',
+                        t('llmUrl'),
+                        provider.baseUrl,
+                        (baseUrl) => setProvider({ ...provider, baseUrl }),
+                        {
+                          required: true,
+                          maxLength: 2048,
+                          placeholder: 'https://api.example.com/v1'
+                        }
+                      )}
+                      {provider.hasApiKey &&
+                        choice(
+                          'key-action',
+                          t('llmApiKey'),
+                          provider.keyAction,
+                          (keyAction) => setProvider({ ...provider, keyAction }),
+                          [
+                            ['keep', t('llmKeepKey')],
+                            ['replace', t('llmReplaceKey')],
+                            ['clear', t('llmClearKey')]
+                          ]
+                        )}
+                      {provider.keyAction === 'replace' &&
+                        textField(
+                          'key',
+                          t('llmApiKey'),
+                          provider.apiKey,
+                          (apiKey) => setProvider({ ...provider, apiKey }),
+                          { type: 'password', maxLength: 8192 }
+                        )}
+                    </>
+                  ) : (
+                    model && (
+                      <>
+                        <Field>
+                          <div className="flex items-center justify-between gap-2">
+                            <FieldLabel htmlFor={`${prefix}-model-id`}>
+                              {t('llmModelId')}
+                            </FieldLabel>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || fetchingModels}
+                              onClick={() => void fetchModels()}
+                            >
+                              {fetchingModels && (
+                                <LoaderCircle data-icon="inline-start" className="animate-spin" />
+                              )}
+                              {t(fetchingModels ? 'llmFetchingModels' : 'llmFetchModels')}
+                            </Button>
+                          </div>
+                          <Combobox
+                            items={remoteModels}
+                            inputValue={model.modelId}
+                            value={remoteModels.includes(model.modelId) ? model.modelId : null}
+                            disabled={busy}
+                            open={modelListOpen}
+                            onOpenChange={(open) =>
+                              setModelListOpen(open && remoteModels.length > 0)
+                            }
+                            onInputValueChange={(modelId, details) => {
+                              if (details.reason === 'input-change')
+                                setModel((current) => (current ? { ...current, modelId } : current))
+                            }}
+                            onValueChange={(modelId) => {
+                              if (modelId)
+                                setModel((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        modelId,
+                                        name: current.name.trim() ? current.name : modelId
+                                      }
+                                    : current
+                                )
+                            }}
+                          >
+                            <ComboboxInput
+                              ref={modelInputRef}
+                              id={`${prefix}-model-id`}
+                              required
+                              maxLength={200}
+                              disabled={busy}
+                              showTrigger={remoteModels.length > 0}
+                            />
+                            <ComboboxContent>
+                              <ComboboxEmpty>{t('llmNoMatchingModels')}</ComboboxEmpty>
+                              <ComboboxList>
+                                {(modelId: string) => (
+                                  <ComboboxItem key={modelId} value={modelId}>
+                                    {modelId}
+                                  </ComboboxItem>
+                                )}
+                              </ComboboxList>
+                            </ComboboxContent>
+                          </Combobox>
+                          {modelsFetched && remoteModels.length === 0 && (
+                            <p className="text-sm text-muted-foreground">
+                              {t('llmNoRemoteModels')}
+                            </p>
+                          )}
+                          {modelListError && (
+                            <Alert variant="destructive">
+                              <AlertDescription>{modelListError}</AlertDescription>
+                            </Alert>
+                          )}
+                        </Field>
+                        {textField(
+                          'model-name',
+                          t('llmModelName'),
+                          model.name,
+                          (name) => setModel({ ...model, name }),
+                          { maxLength: 200, placeholder: model.modelId }
+                        )}
+                        <Accordion
+                          multiple={false}
+                          value={advancedOpen ? ['advanced'] : []}
+                          onValueChange={(value) => setAdvancedOpen(value.length > 0)}
+                        >
+                          <AccordionItem value="advanced">
+                            <AccordionTrigger disabled={busy}>{t('llmAdvanced')}</AccordionTrigger>
+                            <AccordionContent>
+                              <FieldGroup className="pt-2">
+                                {textField(
+                                  'temperature',
+                                  t('llmTemperature'),
+                                  model.temperature,
+                                  (temperature) => setModel({ ...model, temperature }),
+                                  { placeholder: String(defaultModelParameters.temperature) }
+                                )}
+                                {textField(
+                                  'tokens',
+                                  t('llmMaxTokens'),
+                                  model.maxTokens,
+                                  (maxTokens) => setModel({ ...model, maxTokens }),
+                                  { placeholder: String(defaultModelParameters.max_tokens) }
+                                )}
+                                <Field>
+                                  <FieldLabel htmlFor={`${prefix}-extra`}>
+                                    {t('llmExtra')}
+                                  </FieldLabel>
+                                  <Textarea
+                                    id={`${prefix}-extra`}
+                                    className="min-h-24 font-mono"
+                                    value={model.extra}
+                                    disabled={busy}
+                                    maxLength={20000}
+                                    placeholder={'{"top_p": 0.9}'}
+                                    onChange={(event) =>
+                                      setModel({ ...model, extra: event.target.value })
+                                    }
+                                  />
+                                </Field>
+                              </FieldGroup>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </>
+                    )
                   )}
-                  {textField(
-                    'url',
-                    t('llmUrl'),
-                    provider.baseUrl,
-                    (baseUrl) => setProvider({ ...provider, baseUrl }),
-                    { required: true, maxLength: 2048, placeholder: 'https://api.example.com/v1' }
-                  )}
-                  {provider.hasApiKey &&
-                    choice(
-                      'key-action',
-                      t('llmApiKey'),
-                      provider.keyAction,
-                      (keyAction) => setProvider({ ...provider, keyAction }),
-                      [
-                        ['keep', t('llmKeepKey')],
-                        ['replace', t('llmReplaceKey')],
-                        ['clear', t('llmClearKey')]
-                      ]
-                    )}
-                  {provider.keyAction === 'replace' &&
-                    textField(
-                      'key',
-                      t('llmApiKey'),
-                      provider.apiKey,
-                      (apiKey) => setProvider({ ...provider, apiKey }),
-                      { type: 'password', maxLength: 8192 }
-                    )}
-                </>
-              ) : (
-                model && (
-                  <>
-                    {textField(
-                      'model-name',
-                      t('llmName'),
-                      model.name,
-                      (name) => setModel({ ...model, name }),
-                      { required: true, maxLength: 200 }
-                    )}
-                    {textField(
-                      'model-id',
-                      t('llmModelId'),
-                      model.modelId,
-                      (modelId) => setModel({ ...model, modelId }),
-                      { required: true, maxLength: 200 }
-                    )}
-                    {choice(
-                      'think',
-                      t('llmThink'),
-                      model.think,
-                      (think) => setModel({ ...model, think }),
-                      [
-                        ['default', t('llmDefault')],
-                        ['true', t('llmOn')],
-                        ['false', t('llmOff')]
-                      ]
-                    )}
-                    {textField(
-                      'temperature',
-                      t('llmTemperature'),
-                      model.temperature,
-                      (temperature) => setModel({ ...model, temperature }),
-                      { placeholder: t('llmDefault') }
-                    )}
-                    {textField(
-                      'tokens',
-                      t('llmMaxTokens'),
-                      model.maxTokens,
-                      (maxTokens) => setModel({ ...model, maxTokens }),
-                      { placeholder: t('llmDefault') }
-                    )}
-                    <Field>
-                      <FieldLabel htmlFor={`${prefix}-extra`}>{t('llmExtra')}</FieldLabel>
-                      <Textarea
-                        id={`${prefix}-extra`}
-                        className="min-h-24 font-mono"
-                        value={model.extra}
-                        disabled={busy}
-                        maxLength={20000}
-                        placeholder={'{"top_p": 0.9}'}
-                        onChange={(event) => setModel({ ...model, extra: event.target.value })}
-                      />
-                    </Field>
-                  </>
-                )
-              )}
-            </FieldGroup>
-            {errorAlert}
+                </FieldGroup>
+                {errorAlert}
+              </div>
+            </ScrollArea>
             <DialogFooter>
               <Button type="button" variant="outline" disabled={busy} onClick={closeEditor}>
                 {t('cancel')}
@@ -606,6 +744,7 @@ export function LLMSettings({
             <Button
               variant="destructive"
               onClick={() => {
+                modelRequestRef.current++
                 setDiscard(false)
                 setProvider(null)
                 setModel(null)

@@ -6,6 +6,7 @@ import { app, nativeTheme, safeStorage } from 'electron'
 import {
   localDate,
   isReportAutoSaveInterval,
+  defaultModelParameters,
   validDate,
   type CreateLog,
   type Log,
@@ -19,6 +20,7 @@ import {
 
 import { isLocale, resolveLocale } from '../shared/languages'
 import { DataDirectory, ServiceError } from './data-directory'
+import { fetchModelIds } from './llm-discovery'
 export { ServiceError } from './data-directory'
 
 let data: DataDirectory | undefined
@@ -324,6 +326,23 @@ export function llmProviders(): LLMProvider[] {
         }))
     }))
 }
+export async function fetchProviderModels(id: string): Promise<string[]> {
+  if (typeof id !== 'string') throw new ServiceError('state')
+  const provider = database()
+    .prepare('SELECT base_url,api_key FROM llm_providers WHERE id=?')
+    .get(id)
+  if (!provider) throw new ServiceError('state')
+  let apiKey = ''
+  if (provider.api_key !== null) {
+    try {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error()
+      apiKey = safeStorage.decryptString(Buffer.from(provider.api_key as Uint8Array))
+    } catch {
+      throw new ServiceError('llm-key')
+    }
+  }
+  return fetchModelIds(String(provider.base_url), apiKey)
+}
 function configurationText(value: unknown, max = 200): string {
   if (typeof value !== 'string' || !value.trim() || value.length > max)
     throw new ServiceError('state')
@@ -392,15 +411,14 @@ export function saveModel(input: ModelWrite): LLMProvider[] {
     (input.id !== null && typeof input.id !== 'string')
   )
     throw new ServiceError('state')
-  const name = configurationText(input.name)
   const modelId = configurationText(input.modelId)
+  const name = configurationText(input.name || modelId)
   if (!input.parameters || typeof input.parameters !== 'object' || Array.isArray(input.parameters))
     throw new ServiceError('state')
-  const parameters = JSON.stringify(input.parameters)
+  const parameters = JSON.stringify({ ...defaultModelParameters, ...input.parameters })
   if (parameters.length > 20000) throw new ServiceError('too-long')
-  const { think, temperature, max_tokens: maxTokens } = input.parameters
+  const { temperature, max_tokens: maxTokens } = input.parameters
   if (
-    (think !== undefined && typeof think !== 'boolean') ||
     (temperature !== undefined &&
       (typeof temperature !== 'number' ||
         !Number.isFinite(temperature) ||

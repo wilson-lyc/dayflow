@@ -35,6 +35,12 @@ export interface Preferences {
   reportAutoSaveInterval: ReportAutoSaveInterval
 }
 export type ErrorCode =
+  | 'llm-auth'
+  | 'llm-network'
+  | 'llm-timeout'
+  | 'llm-unsupported'
+  | 'llm-response'
+  | 'llm-key'
   | 'storage'
   | 'empty'
   | 'too-long'
@@ -59,6 +65,7 @@ export interface Bootstrap {
   dataDirectory: string
 }
 export type ModelParameters = Record<string, unknown>
+export const defaultModelParameters = { temperature: 0.7, max_tokens: 4096 } as const
 export interface LLMModel {
   id: string
   providerId: string
@@ -88,6 +95,7 @@ export interface ModelWrite {
   parameters: ModelParameters
 }
 export interface DayflowAPI {
+  fetchProviderModels(id: string): Promise<Result<string[]>>
   llmProviders(): Promise<Result<LLMProvider[]>>
   saveProvider(input: ProviderWrite): Promise<Result<LLMProvider[]>>
   deleteProvider(id: string): Promise<Result<LLMProvider[]>>

@@ -17,7 +17,8 @@ const electron = {
   nativeTheme: { themeSource: 'system', shouldUseDarkColors: false },
   safeStorage: {
     isEncryptionAvailable: () => encryptionAvailable,
-    encryptString: (value) => Buffer.from(`encrypted:${value}`)
+    encryptString: (value) => Buffer.from(`encrypted:${value}`),
+    decryptString: (value) => value.toString().replace(/^encrypted:/, '')
   }
 }
 function loadStore() {
@@ -101,7 +102,23 @@ assert.throws(
   (error) => error.code === 'state'
 )
 store.saveModel({ ...modelInput, id: saved.id, parameters: {} })
-assert.deepEqual(loadStore().llmProviders()[0].models[0].parameters, {})
+assert.deepEqual(loadStore().llmProviders()[0].models[0].parameters, {
+  temperature: 0.7,
+  max_tokens: 4096
+})
+const custom = store.saveModel({
+  ...modelInput,
+  id: saved.id,
+  name: '',
+  parameters: { think: { type: 'enabled', budget: 1024 }, enable_thinking: true }
+})[0].models[0]
+assert.equal(custom.name, modelInput.modelId)
+assert.deepEqual(custom.parameters, {
+  temperature: 0.7,
+  max_tokens: 4096,
+  think: { type: 'enabled', budget: 1024 },
+  enable_thinking: true
+})
 assert.equal(store.deleteModel(saved.id)[0].models.length, 0)
 store.saveModel(modelInput)
 store.deleteProvider(provider.id)
@@ -132,4 +149,98 @@ read.close()
 console.log(
   'Passed: migration, persistence, provider/model CRUD, validation, uniqueness, cascade deletion and key handling.'
 )
-fs.rmSync(root, { recursive: true, force: true })
+async function testDiscovery() {
+  const originalFetch = global.fetch
+  const originalTimeout = AbortSignal.timeout
+  try {
+    const configured = store.saveProvider({
+      id: next.id,
+      name: next.name,
+      baseUrl: 'https://example.com/v1/',
+      apiKey: 'discovery-key'
+    })[0]
+    global.fetch = async (url, options) => {
+      assert.equal(String(url), 'https://example.com/v1/models')
+      assert.equal(options.headers.Authorization, 'Bearer discovery-key')
+      assert.equal(options.redirect, 'error')
+      return Response.json({ data: [{ id: 'z-model' }, { id: 'a-model' }, { id: 'a-model' }] })
+    }
+    assert.deepEqual(await store.fetchProviderModels(configured.id), ['a-model', 'z-model'])
+    for (const [status, code] of [
+      [401, 'llm-auth'],
+      [403, 'llm-auth'],
+      [404, 'llm-unsupported'],
+      [405, 'llm-unsupported'],
+      [500, 'llm-network']
+    ]) {
+      global.fetch = async () => new Response('', { status })
+      await assert.rejects(store.fetchProviderModels(configured.id), (error) => error.code === code)
+    }
+    for (const payload of [{ models: [] }, { data: [{}] }, { data: [{ id: '' }] }]) {
+      global.fetch = async () => Response.json(payload)
+      await assert.rejects(
+        store.fetchProviderModels(configured.id),
+        (error) => error.code === 'llm-response'
+      )
+    }
+    global.fetch = async () => new Response('invalid json')
+    await assert.rejects(
+      store.fetchProviderModels(configured.id),
+      (error) => error.code === 'llm-response'
+    )
+    global.fetch = async () => Response.json({ data: [] })
+    assert.deepEqual(await store.fetchProviderModels(configured.id), [])
+    global.fetch = async () => {
+      throw new TypeError('network')
+    }
+    await assert.rejects(
+      store.fetchProviderModels(configured.id),
+      (error) => error.code === 'llm-network'
+    )
+    AbortSignal.timeout = () => {
+      const controller = new AbortController()
+      controller.abort()
+      return controller.signal
+    }
+    await assert.rejects(
+      store.fetchProviderModels(configured.id),
+      (error) => error.code === 'llm-timeout'
+    )
+    AbortSignal.timeout = originalTimeout
+    global.fetch = async () => new Response('x'.repeat(2 * 1024 * 1024 + 1))
+    await assert.rejects(
+      store.fetchProviderModels(configured.id),
+      (error) => error.code === 'llm-response'
+    )
+    encryptionAvailable = false
+    await assert.rejects(
+      store.fetchProviderModels(configured.id),
+      (error) => error.code === 'llm-key'
+    )
+    encryptionAvailable = true
+    await assert.rejects(store.fetchProviderModels('missing'), (error) => error.code === 'state')
+    store.saveProvider({
+      id: configured.id,
+      name: configured.name,
+      baseUrl: 'http://localhost:1234',
+      apiKey: ''
+    })
+    global.fetch = async (url, options) => {
+      assert.equal(String(url), 'http://localhost:1234/models')
+      assert.equal(options.headers.Authorization, undefined)
+      return Response.json({ data: [{ id: 'local-model' }] })
+    }
+    assert.deepEqual(await store.fetchProviderModels(configured.id), ['local-model'])
+    console.log(
+      'Passed: model discovery URL, authentication, parsing, deduplication, empty results, errors, timeout, size limit and local providers.'
+    )
+  } finally {
+    global.fetch = originalFetch
+    AbortSignal.timeout = originalTimeout
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}
+testDiscovery().catch((error) => {
+  console.error(error)
+  process.exitCode = 1
+})
