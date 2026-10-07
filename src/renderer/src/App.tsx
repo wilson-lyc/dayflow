@@ -30,8 +30,7 @@ import { HomePage } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
 import { PreferenceContent } from './components/preference-content'
 import { TrashContent } from './components/trash-content'
-import { NotesList } from './components/notes-list'
-import { QuickNoteModule } from './components/quick-note-module'
+import { QuickNotesBlock } from './components/quick-notes-block'
 import { validateQuickNote } from './lib/quick-note'
 import {
   blankDraft,
@@ -670,44 +669,43 @@ function App(): React.JSX.Element {
         <HomePage
           resizeLabel={t('resizeNotesReport')}
           report={<DailyReportEditor {...reportProps} showTitle={false} />}
-          listRef={listRef}
-          loading={listState === 'loading'}
           notes={
-            <NotesList
-              logs={logs}
-              state={listState}
-              locale={locale}
-              busy={busy}
-              emptyTitle={
-                date > clockDate ? 'future' : date === clockDate ? 'emptyToday' : 'emptyDay'
-              }
-              emptyHint={date <= clockDate}
-              onRetry={() => void load(date, 'daily', 'bottom')}
-              onEdit={beginEdit}
-              onTrash={(log) =>
-                protect(() => {
-                  setConfirmError(null)
-                  setConfirmation({ kind: 'trash', log })
-                })
+            <QuickNotesBlock
+              listRef={listRef}
+              notes={{
+                logs,
+                state: listState,
+                locale,
+                busy,
+                emptyTitle:
+                  date > clockDate ? 'future' : date === clockDate ? 'emptyToday' : 'emptyDay',
+                emptyHint: date <= clockDate,
+                onRetry: () => void load(date, 'daily', 'bottom'),
+                onEdit: beginEdit,
+                onTrash: (log) =>
+                  protect(() => {
+                    setConfirmError(null)
+                    setConfirmation({ kind: 'trash', log })
+                  })
+              }}
+              composer={
+                date <= clockDate || draft.content
+                  ? {
+                      value: draft,
+                      locale,
+                      now: clockTimestamp,
+                      ready,
+                      busy,
+                      blocked: !!editor,
+                      pendingEditable,
+                      error: saveError,
+                      inputRef,
+                      onChange: updateDraft,
+                      onSubmit: () => void submit(Date.now())
+                    }
+                  : undefined
               }
             />
-          }
-          composer={
-            (date <= clockDate || draft.content) && (
-              <QuickNoteModule
-                value={draft}
-                locale={locale}
-                now={clockTimestamp}
-                ready={ready}
-                busy={busy}
-                blocked={!!editor}
-                pendingEditable={pendingEditable}
-                error={saveError}
-                inputRef={inputRef}
-                onChange={updateDraft}
-                onSubmit={() => void submit(Date.now())}
-              />
-            )
           }
         />
       )}

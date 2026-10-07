@@ -13,6 +13,7 @@ export function ResponsiveSplit({
   primaryMinWidth,
   secondaryMinWidth,
   resizeLabel,
+  className,
   secondaryVisible = null
 }: {
   primary: (secondaryShown: boolean) => ReactNode
@@ -20,6 +21,7 @@ export function ResponsiveSplit({
   primaryMinWidth: number
   secondaryMinWidth: number
   resizeLabel: string
+  className?: string
   secondaryVisible?: boolean | null
 }): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null)
@@ -41,7 +43,7 @@ export function ResponsiveSplit({
     } else container.current?.scrollTo({ left: 0 })
   }, [shown, width, minimum])
   return (
-    <div ref={container} className="responsive-split">
+    <div ref={container} className={['responsive-split', className].filter(Boolean).join(' ')}>
       {shown ? (
         <ResizablePanelGroup
           orientation="horizontal"

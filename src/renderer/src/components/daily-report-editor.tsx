@@ -54,7 +54,7 @@ function isDark(): boolean {
 }
 
 const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'var(--background)', color: 'var(--foreground)', height: '100%' },
+  '&': { backgroundColor: 'transparent', color: 'var(--foreground)', height: '100%' },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit', lineHeight: '1.8' },
   '.cm-content': { padding: '12px 0', minHeight: '100%', caretColor: 'var(--foreground)' },

@@ -15,6 +15,7 @@ export function DailyReportPage({
   const [previewVisible, setPreviewVisible] = useState<boolean | null>(null)
   return (
     <ResponsiveSplit
+      className="daily-report-page"
       primaryMinWidth={reportMinWidth}
       secondaryMinWidth={previewMinWidth}
       secondaryVisible={previewVisible}
