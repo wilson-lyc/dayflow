@@ -8,6 +8,10 @@ function subscribe<T>(channel: string, callback: (value: T) => void): () => void
   }
 }
 const api: DayflowAPI = {
+  tasks: () => ipcRenderer.invoke('dayflow:tasks'),
+  createTask: (input) => ipcRenderer.invoke('dayflow:create-task', input),
+  setTaskStatus: (id, status, updatedAt, beforeId) =>
+    ipcRenderer.invoke('dayflow:task-status', id, status, updatedAt, beforeId),
   fetchProviderModels: (id) => ipcRenderer.invoke('dayflow:fetch-provider-models', id),
   llmProviders: () => ipcRenderer.invoke('dayflow:llm-providers'),
   saveProvider: (input) => ipcRenderer.invoke('dayflow:save-provider', input),

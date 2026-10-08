@@ -22,11 +22,11 @@ npm run build
 
 ## 数据目录
 
-正式记录、应用偏好及迁移版本由 Electron 主进程使用内置 `node:sqlite` 管理，无需安装额外 SQLite 原生驱动。项目使用 Electron 39。
+正式记录、任务、应用偏好及数据库版本由 Electron 主进程使用内置 `node:sqlite` 管理，无需安装额外 SQLite 原生驱动。项目使用 Electron 39。
 
 默认在当前用户的主目录创建 `.dayflow`，统一保存业务数据：
 
-- 数据库：`~/.dayflow/dayflow.sqlite`，保存随手记、回收站和应用偏好。
+- 数据库：`~/.dayflow/dayflow.sqlite`，保存随手记、任务、回收站、模型配置和应用偏好。
 - 日报：`~/.dayflow/reports/YYYY-MM-DD.md`，使用 UTF-8 Markdown 正文。
 - 旧日报导入标记：`~/.dayflow/legacy-reports-imported.json`。
 
@@ -34,7 +34,9 @@ npm run build
 
 用于下次启动定位数据目录的 `storage-location.json` 留在 Electron `userData` 中（macOS 默认是 `~/Library/Application Support/Dayflow`）；数据库和日报均存放在配置的数据目录内。配置的目录或数据库不可用时显示错误，不自动创建空数据库。
 
-升级时自动导入旧 `userData/data/dayflow.sqlite`，并将旧渲染层 `localStorage` 中已保存的日报写成 Markdown。旧数据库和原始 localStorage 保留。若已有同日期 Markdown 与旧日报不同，保留现有 Markdown，并将旧正文存到数据目录下的 `backups/legacy-reports`。
+开发阶段数据库只保留最新结构，以 SQLite `user_version` 记录结构版本；旧版本数据库首次打开时清空并重建，不提供迁移脚本或旧数据库导入。
+
+旧渲染层 `localStorage` 中已保存的日报写成 Markdown。原始 localStorage 保留。若已有同日期 Markdown 与旧日报不同，保留现有 Markdown，并将旧正文存到数据目录下的 `backups/legacy-reports`。
 
 数据库使用 WAL 与 FULL 同步模式。新建提交直接写入数据库，使用稳定 ID 重试去重。数据库无法读取时显示错误并保留原文件。未提交输入仅在当前窗口内保留，关闭后不恢复。
 

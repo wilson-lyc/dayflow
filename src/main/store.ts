@@ -1,5 +1,6 @@
+import * as taskService from './task-service'
 import { DatabaseSync } from 'node:sqlite'
-import { constants, copyFileSync, existsSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { app, nativeTheme, safeStorage } from 'electron'
@@ -21,6 +22,7 @@ import {
 import { isLocale, resolveLocale } from '../shared/languages'
 import { DataDirectory, ServiceError } from './data-directory'
 import { fetchModelIds } from './llm-discovery'
+import { initializeDatabase } from './database-schema'
 export { ServiceError } from './data-directory'
 
 let data: DataDirectory | undefined
@@ -41,76 +43,9 @@ function database(): DatabaseSync {
     return db
   }
   if (storage.configured && !existsSync(path)) throw new ServiceError('storage')
-  const legacy = join(app.getPath('userData'), 'data', 'dayflow.sqlite')
-  if (!storage.configured && !existsSync(path) && existsSync(legacy)) {
-    const old = new DatabaseSync(legacy)
-    try {
-      const result = old.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
-      if (Number(result?.busy) !== 0) throw new ServiceError('storage')
-    } finally {
-      old.close()
-    }
-    const temporary = join(storage.root, `.legacy-database-${randomUUID()}.tmp`)
-    try {
-      copyFileSync(legacy, temporary, constants.COPYFILE_EXCL)
-      if (!readFileSync(legacy).equals(readFileSync(temporary))) throw new ServiceError('storage')
-      renameSync(temporary, path)
-    } finally {
-      rmSync(temporary, { force: true })
-    }
-  }
   const candidate = new DatabaseSync(path)
   try {
-    const hasMigrations = candidate
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
-      .get()
-    const version = hasMigrations
-      ? Number(
-          candidate
-            .prepare('SELECT COALESCE(MAX(version),0) AS version FROM schema_migrations')
-            .get()!.version
-        )
-      : 0
-    if (version > 2) throw new ServiceError('version')
-    candidate.exec(
-      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 3000;'
-    )
-    if (version === 0) {
-      // This project has no earlier business schema. Never overwrite an unknown existing logs table.
-      if (
-        candidate.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='logs'").get()
-      )
-        throw new ServiceError('version')
-      candidate.exec(`BEGIN IMMEDIATE;
-        CREATE TABLE logs (id TEXT NOT NULL PRIMARY KEY, type TEXT NOT NULL CHECK(length(type)>0), content TEXT NOT NULL,
-          recorded_at INTEGER NOT NULL, time_zone TEXT NOT NULL, local_date TEXT NOT NULL, created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL, is_deleted INTEGER NOT NULL DEFAULT 0 CHECK(is_deleted IN (0,1)));
-        CREATE INDEX idx_logs_active_date_recorded ON logs(local_date,recorded_at,created_at,id) WHERE is_deleted=0;
-        CREATE INDEX idx_logs_trash_updated ON logs(updated_at DESC,id ASC) WHERE is_deleted=1;
-        CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
-        CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY CHECK(version>0), applied_at INTEGER NOT NULL);`)
-      candidate.prepare('INSERT INTO schema_migrations VALUES(1,?)').run(Date.now())
-      candidate.exec('COMMIT')
-    }
-    if (version < 2) {
-      candidate.exec(`BEGIN IMMEDIATE;
-        CREATE TABLE llm_providers (
-          id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, base_url TEXT NOT NULL,
-          api_key BLOB, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-        CREATE TABLE llm_models (
-          id TEXT PRIMARY KEY NOT NULL, provider_id TEXT NOT NULL REFERENCES llm_providers(id) ON DELETE CASCADE,
-          name TEXT NOT NULL, model_id TEXT NOT NULL, parameters_json TEXT NOT NULL CHECK(json_valid(parameters_json)),
-          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-          UNIQUE(provider_id, model_id));
-        CREATE INDEX idx_llm_models_provider ON llm_models(provider_id);`)
-      candidate.prepare('INSERT INTO schema_migrations VALUES(2,?)').run(Date.now())
-      candidate.exec('COMMIT')
-    }
-    candidate
-      .prepare(
-        'SELECT id,type,content,recorded_at,time_zone,local_date,created_at,updated_at,is_deleted FROM logs LIMIT 0'
-      )
-      .all()
+    initializeDatabase(candidate)
     storage.remember()
     db = candidate
     return db
@@ -466,4 +401,21 @@ export function deleteModel(id: string): LLMProvider[] {
   )
     throw new ServiceError('state')
   return llmProviders()
+}
+
+export function tasks(): import('../shared/model').TaskOccurrence[] {
+  return taskService.list(database())
+}
+export function createTask(
+  input: import('../shared/model').TaskWrite
+): import('../shared/model').TaskOccurrence[] {
+  return taskService.create(database(), input)
+}
+export function setTaskStatus(
+  id: string,
+  status: import('../shared/model').TaskStatus,
+  updatedAt: number,
+  beforeId?: string | null
+): import('../shared/model').TaskOccurrence[] {
+  return taskService.setStatus(database(), id, status, updatedAt, beforeId)
 }

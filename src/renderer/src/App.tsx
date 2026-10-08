@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, NotebookPen, Settings } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Menu, Check } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem
+} from './components/ui/dropdown-menu'
 import { Button } from './components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from './components/ui/tooltip'
 import { Textarea } from './components/ui/textarea'
@@ -27,7 +34,10 @@ import {
 import { DatePicker } from './components/date-picker'
 import { DailyReportModule, type DailyReportModuleProps } from './components/daily-report-module'
 import { useDailyReport } from './hooks/use-daily-report'
-import { HomePage } from './components/home-page'
+import { NavigationIcon } from './components/navigation-icon'
+import { TasksPage } from './components/tasks-page'
+import { taskStatuses } from './lib/task-view'
+import { HomePage, homeMinimumWidth } from './components/home-page'
 import { SettingsPage, type SettingsModule } from './components/settings-page'
 import { LLMSettings } from './components/llm-settings'
 import { PreferenceContent } from './components/preference-content'
@@ -51,7 +61,7 @@ import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
 import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
 
-type View = 'daily' | 'settings'
+type View = 'daily' | 'settings' | 'tasks'
 type ListScope = 'daily' | 'trash'
 type Editor = {
   log: Log
@@ -79,10 +89,22 @@ function App(): React.JSX.Element {
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<ErrorCode | null>(null)
   const [view, setView] = useState<View>('daily')
-  const [homeReportVisible, setHomeReportVisible] = useState(false)
+  const [taskCreateOpen, setTaskCreateOpen] = useState(false)
+  const [activeTaskCard, setActiveTaskCard] = useState(0)
+  const [tasksWide, setTasksWide] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [homeWide, setHomeWide] = useState(false)
+  useLayoutEffect(() => {
+    const element = contentRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) =>
+      setHomeWide(entry.contentRect.width >= homeMinimumWidth)
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   const [activeHomeCard, setActiveHomeCard] = useState<'notes' | 'report'>('notes')
   const viewRef = useRef<View>('daily')
-  const [settingsDetailOpen, setSettingsDetailOpen] = useState(false)
   const [settingsModule, setSettingsModule] = useState<SettingsModule>('general')
   const settingsModuleRef = useRef<SettingsModule>('general')
   const [date, setDate] = useState(today)
@@ -201,7 +223,6 @@ function App(): React.JSX.Element {
       resetDraft(blankDraft(selected))
     dateRef.current = selected
     setDate(selected)
-    if (page === 'settings') setSettingsDetailOpen(false)
     viewRef.current = page
     setView(page)
     if (page === 'daily') {
@@ -226,7 +247,6 @@ function App(): React.JSX.Element {
           void load(dateRef.current, 'trash', 'bottom')
         }
       }
-      setSettingsDetailOpen(true)
     })
   }
   useLayoutEffect(() => {
@@ -557,7 +577,8 @@ function App(): React.JSX.Element {
         : 'unsaved'
   const confirmHint: MessageKey =
     confirmKind === 'trash' ? 'trashHint' : confirmKind === 'delete' ? 'deleteHint' : 'unsavedHint'
-  const dateChange = (selected: string): void => protect(() => navigate('daily', selected))
+  const dateChange = (selected: string): void =>
+    protect(() => navigate(viewRef.current === 'tasks' ? 'tasks' : 'daily', selected))
   const reportProps: DailyReportModuleProps = {
     content: report.content,
     exists: report.exists,
@@ -697,7 +718,7 @@ function App(): React.JSX.Element {
                 label={selectedLabel}
                 triggerVariant="header-ghost"
                 showToday
-                max={clockDate}
+                max={view === 'daily' ? clockDate : undefined}
                 disabled={busy}
                 onChange={dateChange}
               />
@@ -708,7 +729,7 @@ function App(): React.JSX.Element {
                       variant="header-ghost"
                       size="icon"
                       aria-label={t('next')}
-                      disabled={busy || date >= clockDate}
+                      disabled={busy || (view === 'daily' && date >= clockDate)}
                       onClick={() => dateChange(shiftDay(date, 1))}
                     >
                       <ChevronRight />
@@ -720,149 +741,224 @@ function App(): React.JSX.Element {
             </div>
             <div className="top-spacer" />
             <nav className="top-actions">
-              {!homeReportVisible && (
+              {view === 'tasks' && (
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <Button
                         variant="header-ghost"
                         size="icon"
-                        aria-label={t(activeHomeCard === 'report' ? 'note' : 'report')}
+                        id="task-create-entry"
+                        aria-label={t('taskCreate')}
                         disabled={busy}
-                        onClick={() =>
-                          setActiveHomeCard((card) => (card === 'notes' ? 'report' : 'notes'))
-                        }
+                        onClick={() => setTaskCreateOpen(true)}
                       >
-                        {activeHomeCard === 'report' ? <NotebookPen /> : <FileText />}
+                        <Plus />
                       </Button>
                     }
                   />
-                  <TooltipContent side="top">
-                    {t(activeHomeCard === 'report' ? 'note' : 'report')}
-                  </TooltipContent>
+                  <TooltipContent side="top">{t('taskCreate')}</TooltipContent>
                 </Tooltip>
               )}
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="header-ghost"
-                      id="settings-entry"
-                      aria-label={t('settings')}
-                      disabled={busy}
-                      onClick={() => protect(() => navigate('settings'))}
-                    >
-                      <Settings data-icon="inline-start" />
-                      {t('settings')}
-                    </Button>
-                  }
-                />
-                <TooltipContent side="top">{t('settings')}</TooltipContent>
-              </Tooltip>
+              {view === 'tasks' && !tasksWide && (
+                <>
+                  {([-1, 1] as const).map((direction) => {
+                    const target = Math.max(0, Math.min(2, activeTaskCard + direction))
+                    return (
+                      <Tooltip key={direction}>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="header-ghost"
+                              size="icon"
+                              aria-label={t(taskStatuses[target])}
+                              disabled={busy || target === activeTaskCard}
+                              onClick={() => setActiveTaskCard(target)}
+                            >
+                              {direction === -1 ? <ChevronLeft /> : <ChevronRight />}
+                            </Button>
+                          }
+                        />
+                        <TooltipContent side="top">{t(taskStatuses[target])}</TooltipContent>
+                      </Tooltip>
+                    )
+                  })}
+                </>
+              )}
             </nav>
           </>
         ) : (
           <>
-            <Button
-              variant="header-ghost"
-              disabled={busy}
-              onClick={() =>
-                protect(() => {
-                  if (window.matchMedia('(max-width: 600px)').matches && settingsDetailOpen) {
-                    if (settingsModule === 'trash') selectSettingsModule('note')
-                    else setSettingsDetailOpen(false)
-                  } else navigate('daily')
-                })
-              }
-            >
-              <ArrowLeft data-icon="inline-start" />
-              {t('back')}
-            </Button>
-            <span className="top-title settings-wide-title">{t('settings')}</span>
-            <span className="top-title settings-narrow-title">
-              {t(settingsDetailOpen ? settingsModule : 'settings')}
-            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="settings-menu-toggle"
+                    variant="header-ghost"
+                    size="icon"
+                    disabled={busy}
+                    aria-label={t('settingsCategories')}
+                  >
+                    <Menu />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent>
+                <DropdownMenuGroup>
+                  {(['general', 'note', 'report', 'llm'] as const).map((module) => (
+                    <DropdownMenuItem
+                      key={module}
+                      disabled={busy}
+                      onClick={() => selectSettingsModule(module)}
+                    >
+                      {t(module)}
+                      {(settingsModule === module ||
+                        (module === 'note' && settingsModule === 'trash')) && (
+                        <Check data-icon="inline-end" className="ml-auto" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <span className="top-title">{t('settings')}</span>
           </>
         )}
       </header>
       <Toaster closeLabel={t('close')} />
-      {bootError ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>{t('openError')}</EmptyTitle>
-            <EmptyDescription>{t(errorKey(bootError))}</EmptyDescription>
-          </EmptyHeader>
-          <Button onClick={() => void boot()}>{t('retry')}</Button>
-        </Empty>
-      ) : !ready ? (
-        <div className="loading-notes">
-          <Skeleton className="h-16" />
-          <Skeleton className="h-16" />
-        </div>
-      ) : view === 'settings' ? (
-        <SettingsPage
-          locale={locale}
-          active={settingsModule}
-          detailOpen={settingsDetailOpen}
-          disabled={busy}
-          onChange={selectSettingsModule}
-          contents={{
-            llm: <LLMSettings locale={locale} closeGuardRef={llmCloseGuard} />,
-            general: <PreferenceContent module="general" {...preferenceProps} />,
-            report: <PreferenceContent module="report" {...preferenceProps} />,
-            note: (
-              <PreferenceContent module="note" {...preferenceProps}>
-                <Field orientation="horizontal" className="settings-row">
-                  <FieldTitle>{t('trash')}</FieldTitle>
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => selectSettingsModule('trash')}
-                  >
-                    {t('openTrash')}
-                    <ChevronRight data-icon="inline-end" />
-                  </Button>
-                </Field>
-              </PreferenceContent>
-            ),
-            trash: (
-              <>
-                <Button
-                  variant="ghost"
-                  className="self-start mb-4 settings-trash-back"
-                  disabled={busy}
-                  onClick={() => selectSettingsModule('note')}
-                >
-                  <ArrowLeft data-icon="inline-start" />
-                  {t('back')}
-                </Button>
-                <h2 className="mb-4 text-sm font-medium">{t('trash')}</h2>
-                <TrashContent
-                  listRef={listRef}
-                  logs={logs}
-                  state={listState}
-                  locale={locale}
-                  busy={busy}
-                  onRetry={() => void load(date, 'trash', 'bottom')}
-                  onRestore={(log) => void operate(log, 'restore')}
-                  onDelete={(log) => {
-                    setConfirmError(null)
-                    setConfirmation({ kind: 'delete', log })
-                  }}
+      <div className="window-body">
+        <nav className="window-sidebar" aria-label={t('navigation')}>
+          {(
+            [
+              ...(homeWide
+                ? [{ page: 'daily', label: 'home', icon: 'daily' } as const]
+                : [
+                    { page: 'daily', label: 'note', icon: 'notes' } as const,
+                    { page: 'daily', label: 'report', icon: 'report' } as const
+                  ]),
+              { page: 'tasks', label: 'tasks', icon: 'tasks' },
+              { page: 'settings', label: 'settings', icon: 'settings' }
+            ] as const
+          ).map(({ page, label, icon }) => {
+            const selected =
+              view === page && (homeWide || page !== 'daily' || activeHomeCard === icon)
+            return (
+              <Tooltip key={icon}>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      className="window-nav-button"
+                      size="icon"
+                      id={page === 'settings' ? 'settings-entry' : undefined}
+                      aria-label={t(label)}
+                      aria-current={selected ? 'page' : undefined}
+                      disabled={busy}
+                      onClick={() => {
+                        if (selected) return
+                        protect(() => {
+                          if (icon === 'notes' || icon === 'report') setActiveHomeCard(icon)
+                          navigate(page)
+                        })
+                      }}
+                    >
+                      <NavigationIcon page={icon} />
+                    </Button>
+                  }
                 />
-              </>
+                <TooltipContent side="right">{t(label)}</TooltipContent>
+              </Tooltip>
             )
-          }}
-        />
-      ) : (
-        <HomePage
-          activeCard={activeHomeCard}
-          onReportVisibleChange={setHomeReportVisible}
-          resizeLabel={t('resizeNotesReport')}
-          report={<DailyReportModule key={date} {...reportProps} />}
-          notes={<QuickNotesModule {...notesProps} />}
-        />
-      )}
+          })}
+        </nav>
+        <div ref={contentRef} className="window-content">
+          {bootError ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>{t('openError')}</EmptyTitle>
+                <EmptyDescription>{t(errorKey(bootError))}</EmptyDescription>
+              </EmptyHeader>
+              <Button onClick={() => void boot()}>{t('retry')}</Button>
+            </Empty>
+          ) : !ready ? (
+            <div className="loading-notes">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </div>
+          ) : view === 'tasks' ? (
+            <TasksPage
+              locale={locale}
+              active={activeTaskCard}
+              onWideChange={setTasksWide}
+              onActiveChange={setActiveTaskCard}
+              createOpen={taskCreateOpen}
+              onCreateOpenChange={setTaskCreateOpen}
+            />
+          ) : view === 'settings' ? (
+            <SettingsPage
+              locale={locale}
+              active={settingsModule}
+              disabled={busy}
+              onChange={selectSettingsModule}
+              contents={{
+                llm: <LLMSettings locale={locale} closeGuardRef={llmCloseGuard} />,
+                general: <PreferenceContent module="general" {...preferenceProps} />,
+                report: <PreferenceContent module="report" {...preferenceProps} />,
+                note: (
+                  <PreferenceContent module="note" {...preferenceProps}>
+                    <Field orientation="horizontal" className="settings-row">
+                      <FieldTitle>{t('trash')}</FieldTitle>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => selectSettingsModule('trash')}
+                      >
+                        {t('openTrash')}
+                        <ChevronRight data-icon="inline-end" />
+                      </Button>
+                    </Field>
+                  </PreferenceContent>
+                ),
+                trash: (
+                  <>
+                    <Button
+                      variant="ghost"
+                      className="self-start mb-4 settings-trash-back"
+                      disabled={busy}
+                      onClick={() => selectSettingsModule('note')}
+                    >
+                      <ArrowLeft data-icon="inline-start" />
+                      {t('back')}
+                    </Button>
+                    <h2 className="mb-4 text-sm font-medium">{t('trash')}</h2>
+                    <TrashContent
+                      listRef={listRef}
+                      logs={logs}
+                      state={listState}
+                      locale={locale}
+                      busy={busy}
+                      onRetry={() => void load(date, 'trash', 'bottom')}
+                      onRestore={(log) => void operate(log, 'restore')}
+                      onDelete={(log) => {
+                        setConfirmError(null)
+                        setConfirmation({ kind: 'delete', log })
+                      }}
+                    />
+                  </>
+                )
+              }}
+            />
+          ) : (
+            <HomePage
+              activePage={activeHomeCard}
+              wide={homeWide}
+              resizeLabel={t('resizeNotesReport')}
+              report={<DailyReportModule key={date} {...reportProps} />}
+              notes={<QuickNotesModule {...notesProps} />}
+            />
+          )}
+        </div>
+      </div>
       <Dialog
         open={!!editor}
         disablePointerDismissal={busy || !!confirmation}
@@ -904,7 +1000,7 @@ function App(): React.JSX.Element {
                     locale={locale}
                     label={editor.date}
                     disabled={busy}
-                    max={clockDate}
+                    max={view === 'daily' ? clockDate : undefined}
                     onChange={(value) =>
                       modifyEditor({ date: value, current: false, touchedTime: true })
                     }

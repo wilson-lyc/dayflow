@@ -94,7 +94,41 @@ export interface ModelWrite {
   modelId: string
   parameters: ModelParameters
 }
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+export interface TaskWrite {
+  id: string
+  type: 'todo' | 'schedule'
+  name: string
+  isAllDay: boolean
+  startAt: number | null
+  endAt: number | null
+  startDate: string | null
+  endDateExclusive: string | null
+  timeZone: string
+  location: string | null
+  link: string | null
+  repeatRule: {
+    frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+    interval: number
+    untilDate: string | null
+  } | null
+}
+export interface TaskOccurrence extends TaskWrite {
+  taskId: string
+  recurrenceKey: string
+  status: TaskStatus
+  updatedAt: number
+  completedAt: number | null
+}
 export interface DayflowAPI {
+  tasks(): Promise<Result<TaskOccurrence[]>>
+  createTask(input: TaskWrite): Promise<Result<TaskOccurrence[]>>
+  setTaskStatus(
+    id: string,
+    status: TaskStatus,
+    updatedAt: number,
+    beforeId?: string | null
+  ): Promise<Result<TaskOccurrence[]>>
   fetchProviderModels(id: string): Promise<Result<string[]>>
   llmProviders(): Promise<Result<LLMProvider[]>>
   saveProvider(input: ProviderWrite): Promise<Result<LLMProvider[]>>

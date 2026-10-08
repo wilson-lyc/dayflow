@@ -57,8 +57,8 @@ legacy.exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_
 legacy.close()
 const store = loadStore()
 assert.deepEqual(store.llmProviders(), [])
-assert.equal(store.find('existing').content, 'preserved')
-assert.equal(store.preferences().themeMode, 'dark')
+assert.equal(store.find('existing'), null)
+assert.equal(store.preferences().themeMode, 'system')
 const provider = store.saveProvider({
   id: null,
   name: 'Provider',
@@ -68,7 +68,7 @@ const provider = store.saveProvider({
 assert.equal(provider.hasApiKey, true)
 assert.equal('apiKey' in provider, false)
 const read = new DatabaseSync(databasePath, { readOnly: true })
-assert.equal(read.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version, 2)
+assert.equal(read.prepare('PRAGMA user_version').get().user_version, 3)
 const originalKey = Buffer.from(read.prepare('SELECT api_key FROM llm_providers').get().api_key)
 assert.notEqual(originalKey.toString(), 'secret')
 store.saveProvider({ id: provider.id, name: 'Renamed', baseUrl: 'http://localhost:1234/v1' })
@@ -147,7 +147,7 @@ assert.equal(
 )
 read.close()
 console.log(
-  'Passed: migration, persistence, provider/model CRUD, validation, uniqueness, cascade deletion and key handling.'
+  'Passed: schema reset, persistence, provider/model CRUD, validation, uniqueness, cascade deletion and key handling.'
 )
 async function testDiscovery() {
   const originalFetch = global.fetch
