@@ -156,7 +156,8 @@ export interface DayflowAPI {
     id: string,
     content: NoteContent,
     recordedAt: number | null,
-    timeZone: string
+    timeZone: string,
+    taskId?: string | null
   ): Promise<Result<Log>>
   change(id: string, action: 'trash' | 'restore' | 'delete'): Promise<Result<Log | null>>
   preference(key: keyof Preferences, value: string): Promise<Result<Preferences>>

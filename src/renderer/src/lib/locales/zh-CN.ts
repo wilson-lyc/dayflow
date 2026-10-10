@@ -182,6 +182,7 @@ export const zh: Record<MessageKey, string> = {
   other: '其他日志',
   more: '更多操作',
   edit: '编辑',
+  editNote: '编辑随手记',
   expand: '展开全文',
   collapse: '收起',
   backfill: '补记',

@@ -1,7 +1,9 @@
-import { ListTodo, MoreHorizontal } from 'lucide-react'
+import { Code2, ListTodo, MoreHorizontal } from 'lucide-react'
 import type { Log, Locale } from '../../../shared/model'
 import { timeText } from '../lib/dates'
 import { translator, type MessageKey } from '../lib/i18n'
+import { CodeEditor } from './code-editor'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from './ui/accordion'
 import { NoteBody } from './note-body'
 import { Button } from './ui/button'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './ui/empty'
@@ -134,6 +136,40 @@ export function NotesList({
             </CardHeader>
             <CardContent className="note-content">
               <NoteBody content={log.content.text} locale={locale} />
+              {log.content.codeCards.length > 0 && (
+                <Accordion multiple className="note-code-cards mt-4 gap-2">
+                  {log.content.codeCards.map((card, index) => (
+                    <AccordionItem
+                      key={card.id}
+                      value={card.id}
+                      className="overflow-hidden rounded-lg border bg-muted/25 not-last:border-b"
+                    >
+                      <AccordionTrigger className="items-center gap-3 rounded-none px-3 py-2.5 hover:bg-muted/60">
+                        <Code2 className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {card.name.trim() || t('codeSnippet', { n: index + 1 })}
+                        </span>
+                        <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                          {card.language || t('plainCode')}
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent className="border-t p-0">
+                        <CodeEditor
+                          id={`note-${log.id}-code-${card.id}`}
+                          value={card.code}
+                          language={card.language}
+                          label={card.name.trim() || t('codeSnippet', { n: index + 1 })}
+                          hint=""
+                          locale={locale}
+                          invalid={false}
+                          readOnly
+                          onChange={() => {}}
+                        />
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              )}
               {mode === 'trash' && (
                 <div className="trash-actions">
                   <span>

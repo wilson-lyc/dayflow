@@ -124,7 +124,7 @@ function validate(content: NoteContent, at: number, zone: string): string {
     ids.add(card.id)
     length += Array.from(card.code).length
   }
-  if (!content.text.trim() && !content.codeCards.length) throw new ServiceError('empty')
+  if (!content.text.trim()) throw new ServiceError('empty')
   if (length > 10000) throw new ServiceError('too-long')
   if (!Number.isSafeInteger(at) || at > Date.now()) throw new ServiceError('time')
   try {
@@ -165,22 +165,37 @@ export function create(input: CreateLog): Log {
     )
   return find(input.id)!
 }
-export function edit(id: string, content: NoteContent, at: number | null, zone: string): Log {
+export function edit(
+  id: string,
+  content: NoteContent,
+  at: number | null,
+  zone: string,
+  taskId?: string | null
+): Log {
   const log = find(id)
   if (!log || log.isDeleted || log.type !== 'manual') throw new ServiceError('state')
+  const nextTaskId = taskId === undefined ? log.taskId : taskId
+  if (
+    nextTaskId !== null &&
+    nextTaskId !== log.taskId &&
+    (typeof nextTaskId !== 'string' ||
+      !database().prepare('SELECT id FROM tasks WHERE id=? AND deleted_at IS NULL').get(nextTaskId))
+  )
+    throw new ServiceError('state')
   const recordedAt = at === null ? Date.now() : at
   const date = validate(content, recordedAt, zone)
   const serialized = JSON.stringify(content)
   if (
     JSON.stringify(log.content) !== serialized ||
     log.recordedAt !== recordedAt ||
-    log.timeZone !== zone
+    log.timeZone !== zone ||
+    log.taskId !== nextTaskId
   ) {
     database()
       .prepare(
-        'UPDATE logs SET content_json=?,recorded_at=?,time_zone=?,local_date=?,updated_at=? WHERE id=? AND is_deleted=0 AND type=?'
+        'UPDATE logs SET content_json=?,recorded_at=?,time_zone=?,local_date=?,updated_at=?,task_id=? WHERE id=? AND is_deleted=0 AND type=?'
       )
-      .run(serialized, recordedAt, zone, date, Date.now(), id, 'manual')
+      .run(serialized, recordedAt, zone, date, Date.now(), nextTaskId, id, 'manual')
   }
   return find(id)!
 }

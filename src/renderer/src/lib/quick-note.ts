@@ -3,7 +3,7 @@ import { systemZone, type Draft } from './dates'
 import type { MessageKey } from './i18n'
 
 export function validateQuickNote(draft: Draft, now: number): MessageKey | null {
-  if (!draft.content.trim() && !draft.codeCards.length) return 'empty'
+  if (!draft.content.trim()) return 'empty'
   if (draft.codeCards.some((card) => !card.code.trim())) return 'codeRequired'
   if (noteLength(draft) > 10000) return 'tooLong'
   if (draft.pendingSubmission)

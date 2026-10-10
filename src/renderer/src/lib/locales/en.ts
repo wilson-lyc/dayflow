@@ -182,6 +182,7 @@ export const en = {
   other: 'Other log',
   more: 'More actions',
   edit: 'Edit',
+  editNote: 'Edit note',
   expand: 'Show full note',
   collapse: 'Collapse',
   backfill: 'Add past note',

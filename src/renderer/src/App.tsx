@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Menu, Check } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Menu, Check, X } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -10,8 +10,7 @@ import {
 import { Button } from './components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from './components/ui/tooltip'
 import { Textarea } from './components/ui/textarea'
-import { Input } from './components/ui/input'
-import { Field, FieldGroup, FieldLabel, FieldError, FieldTitle } from './components/ui/field'
+import { Field, FieldLabel, FieldError, FieldTitle } from './components/ui/field'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './components/ui/empty'
 import { Skeleton } from './components/ui/skeleton'
@@ -43,7 +42,10 @@ import { LLMSettings } from './components/llm-settings'
 import { PreferenceContent } from './components/preference-content'
 import { TrashContent } from './components/trash-content'
 import { QuickNotesModule, type QuickNotesModuleProps } from './components/quick-notes-module'
-import { validateQuickNote } from './lib/quick-note'
+import { CodeCardsDialog } from './components/code-cards-dialog'
+import { DateTimePicker } from './components/date-time-picker'
+import { TaskLinkPicker, type LinkedTask } from './components/task-link-picker'
+import { noteLength, validateQuickNote } from './lib/quick-note'
 import {
   blankDraft,
   today,
@@ -59,13 +61,15 @@ import { translator, errorKey, type MessageKey } from './lib/i18n'
 import { cn } from './lib/utils'
 import { resolveLocale } from '../../shared/languages'
 import { localDate } from '../../shared/model'
-import type { Log, Locale, Preferences, ErrorCode } from '../../shared/model'
+import type { Log, Locale, Preferences, ErrorCode, CodeCard } from '../../shared/model'
 
 type View = 'daily' | 'settings' | 'tasks'
 type ListScope = 'daily' | 'trash'
 type Editor = {
   log: Log
   content: string
+  codeCards: CodeCard[]
+  linkedTask: LinkedTask | null
   date: string
   time: string
   current: boolean
@@ -315,6 +319,8 @@ function App(): React.JSX.Element {
     return (
       !!edit &&
       (edit.content !== edit.log.content.text ||
+        JSON.stringify(edit.codeCards) !== JSON.stringify(edit.log.content.codeCards) ||
+        (edit.linkedTask?.id ?? null) !== edit.log.taskId ||
         edit.current ||
         (edit.touchedTime &&
           wallTime(edit.date, edit.time, edit.log.timeZone) !== edit.log.recordedAt))
@@ -420,6 +426,8 @@ function App(): React.JSX.Element {
       assignEditor({
         log,
         content: log.content.text,
+        codeCards: log.content.codeCards.map((card) => ({ ...card })),
+        linkedTask: log.taskId ? { id: log.taskId, name: log.taskName ?? t('linkedTask') } : null,
         date: log.localDate,
         time: timeText(log.recordedAt, log.timeZone),
         current: false,
@@ -453,9 +461,10 @@ function App(): React.JSX.Element {
     setLocked(true)
     const result = await api.edit(
       edit.log.id,
-      { ...edit.log.content, text: edit.content },
+      { text: edit.content, codeCards: edit.codeCards },
       at,
-      edit.log.timeZone
+      edit.log.timeZone,
+      edit.linkedTask?.id ?? null
     )
     setLocked(false)
     if (!result.ok) {
@@ -979,77 +988,104 @@ function App(): React.JSX.Element {
         }}
       >
         <DialogContent
-          className="note-edit-dialog max-h-[85dvh] overflow-y-auto sm:max-w-xl"
+          className="note-edit-dialog flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
           showCloseButton={false}
           initialFocus={editInputRef}
           finalFocus={() =>
             document.getElementById(`more-${editingIdRef.current}`) ?? inputRef.current
           }
         >
-          <DialogHeader>
-            <DialogTitle>{t('edit')}</DialogTitle>
+          <DialogHeader className="shrink-0 border-b px-5 py-4">
+            <div className="flex items-center justify-between">
+              <DialogTitle>{t('editNote')}</DialogTitle>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={busy}
+                aria-label={t('close')}
+                onClick={closeEditor}
+              >
+                <X />
+              </Button>
+            </div>
           </DialogHeader>
           {editor && (
-            <FieldGroup>
+            <div className="min-h-0 overflow-y-auto p-5">
+              <div className="mb-4 flex flex-wrap items-center gap-1 rounded-xl border bg-muted/25 p-2">
+                <DateTimePicker
+                  value={{
+                    content: editor.content,
+                    codeCards: editor.codeCards,
+                    targetDate: editor.date,
+                    timeMode: editor.current ? 'current-time' : 'custom',
+                    recordedAt: editor.touchedTime
+                      ? wallTime(editor.date, editor.time, editor.log.timeZone)
+                      : editor.log.recordedAt,
+                    timeZone: editor.log.timeZone,
+                    pendingSubmission: null
+                  }}
+                  locale={locale}
+                  now={clockTimestamp}
+                  disabled={busy}
+                  onChange={(patch) => {
+                    if (patch.timeMode === 'current-time')
+                      modifyEditor({ current: true, touchedTime: true })
+                    else if (patch.recordedAt != null)
+                      modifyEditor({
+                        date: patch.targetDate ?? editor.date,
+                        time: timeText(patch.recordedAt, editor.log.timeZone),
+                        current: false,
+                        touchedTime: true
+                      })
+                  }}
+                />
+                <CodeCardsDialog
+                  value={editor.codeCards}
+                  text={editor.content}
+                  locale={locale}
+                  disabled={busy}
+                  onChange={(codeCards) => modifyEditor({ codeCards })}
+                />
+                <TaskLinkPicker
+                  value={editor.linkedTask}
+                  locale={locale}
+                  disabled={busy}
+                  onChange={(linkedTask) => modifyEditor({ linkedTask })}
+                />
+                <span className="ml-auto px-2 text-xs tabular-nums text-muted-foreground">
+                  {noteLength(editor)} / 10000
+                </span>
+              </div>
               <Field data-invalid={editor.error === 'empty' || editor.error === 'too-long'}>
-                <FieldLabel htmlFor="edit-content">{t('content')}</FieldLabel>
+                <FieldLabel className="sr-only" htmlFor="edit-content">
+                  {t('content')}
+                </FieldLabel>
                 <Textarea
                   ref={editInputRef}
                   id="edit-content"
-                  className="note-edit-textarea"
+                  className="min-h-56 resize-y rounded-xl p-4 leading-relaxed"
                   value={editor.content}
                   disabled={busy}
                   onChange={(event) => modifyEditor({ content: event.target.value })}
                   aria-invalid={editor.error === 'empty' || editor.error === 'too-long'}
-                  rows={8}
                 />
               </Field>
-              <div className="time-controls">
-                <Field className="w-auto">
-                  <FieldLabel>{t('date')}</FieldLabel>
-                  <DatePicker
-                    date={editor.date}
-                    locale={locale}
-                    label={editor.date}
-                    disabled={busy}
-                    max={view === 'daily' ? clockDate : undefined}
-                    onChange={(value) =>
-                      modifyEditor({ date: value, current: false, touchedTime: true })
-                    }
-                  />
-                </Field>
-                <Field className="w-auto">
-                  <FieldLabel htmlFor="edit-time">{t('time')}</FieldLabel>
-                  <Input
-                    id="edit-time"
-                    type="time"
-                    value={editor.time}
-                    className="w-32"
-                    disabled={busy || editor.current}
-                    onChange={(event) =>
-                      modifyEditor({ time: event.target.value, current: false, touchedTime: true })
-                    }
-                  />
-                </Field>
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => modifyEditor({ current: !editor.current })}
-                  aria-pressed={editor.current}
-                >
-                  {t('useCurrent')}
-                </Button>
-              </div>
-              {editor.error && <FieldError>{t(errorKey(editor.error))}</FieldError>}
-            </FieldGroup>
+              {editor.error && (
+                <FieldError className="mt-3">{t(errorKey(editor.error))}</FieldError>
+              )}
+            </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="m-0 shrink-0 px-5 py-4">
             <Button variant="outline" disabled={busy} onClick={closeEditor}>
               {t('cancel')}
             </Button>
             <Button
               disabled={
-                busy || !editor?.content.trim() || Array.from(editor?.content ?? '').length > 10000
+                busy ||
+                !editor ||
+                !editor.content.trim() ||
+                editor.codeCards.some((card) => !card.code.trim()) ||
+                noteLength(editor) > 10000
               }
               onClick={() => void saveEdit()}
             >

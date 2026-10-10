@@ -62,7 +62,8 @@ export function CodeEditor({
   locale,
   invalid,
   describedBy,
-  onChange
+  onChange,
+  readOnly = false
 }: {
   id: string
   value: string
@@ -72,6 +73,7 @@ export function CodeEditor({
   locale: Locale
   invalid: boolean
   describedBy?: string
+  readOnly?: boolean
   onChange: (value: string) => void
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
@@ -93,6 +95,8 @@ export function CodeEditor({
         doc: initial.current.value,
         extensions: [
           basicSetup,
+          EditorState.readOnly.of(readOnly),
+          EditorView.editable.of(!readOnly),
           keymap.of([indentWithTab]),
           indentUnit.of('  '),
           languageConfig.current.of(languageExtension(initial.current.language)),
@@ -111,7 +115,7 @@ export function CodeEditor({
       editor.current = null
       view.destroy()
     }
-  }, [id])
+  }, [id, readOnly])
   useLayoutEffect(() => {
     const view = editor.current
     if (view && view.state.doc.toString() !== value)
@@ -157,12 +161,13 @@ export function CodeEditor({
           role: 'textbox',
           'aria-label': label,
           'aria-multiline': 'true',
+          'aria-readonly': String(readOnly),
           'aria-invalid': String(invalid),
           ...(describedBy ? { 'aria-describedby': describedBy } : {})
         })
       )
     })
-  }, [id, label, invalid, describedBy])
+  }, [id, label, invalid, describedBy, readOnly])
 
   return <div ref={host} className="code-editor" data-invalid={invalid || undefined} />
 }

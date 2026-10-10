@@ -180,6 +180,21 @@ assert.equal(store.create({ ...noteInput(), taskId: undefined }).taskId, null)
 assert.throws(() => store.create({ ...noteInput(), taskId: 'missing' }), /state/)
 assert.equal(store.create({ ...firstNote, taskId: null }).taskId, taskId)
 store.edit(firstNote.id, { text: '更新进展', codeCards: [] }, 0, 'UTC')
+assert.equal(
+  store.edit(firstNote.id, { text: '取消关联', codeCards: [] }, 0, 'UTC', null).taskId,
+  null
+)
+assert.equal(loadStore().find(firstNote.id).taskId, null)
+assert.equal(
+  store.edit(firstNote.id, { text: '重新关联', codeCards: [] }, 0, 'UTC', taskId).taskName,
+  '关联任务'
+)
+assert.throws(
+  () => store.edit(firstNote.id, { text: '不应保存', codeCards: [] }, 0, 'UTC', 'missing'),
+  /state/
+)
+assert.equal(store.find(firstNote.id).content.text, '重新关联')
+assert.equal(store.find(firstNote.id).taskId, taskId)
 store.change(firstNote.id, 'trash')
 store.change(firstNote.id, 'restore')
 assert.equal(store.find(firstNote.id).taskId, taskId)
@@ -212,11 +227,25 @@ assert.equal(
     .some((column) => column.name === 'content'),
   false
 )
-const editedContent = { ...richNote.content, text: '修改后的正文' }
+const editedContent = {
+  text: '修改后的正文',
+  codeCards: [
+    {
+      ...richNote.content.codeCards[0],
+      name: '更新代码',
+      language: 'javascript',
+      code: 'const updated = true'
+    }
+  ]
+}
 assert.deepEqual(store.edit(richNote.id, editedContent, 0, 'UTC').content, editedContent)
-assert.deepEqual(loadStore().find(richNote.id).content.codeCards, richNote.content.codeCards)
+assert.deepEqual(loadStore().find(richNote.id).content.codeCards, editedContent.codeCards)
 const codeOnly = { text: '', codeCards: [richNote.content.codeCards[0]] }
-assert.deepEqual(store.create({ ...noteInput(), content: codeOnly }).content, codeOnly)
+for (const text of ['', '  \n\t']) {
+  const content = { ...codeOnly, text }
+  assert.throws(() => store.create({ ...noteInput(), content }), /empty/)
+  assert.throws(() => store.edit(richNote.id, content, 0, 'UTC'), /empty/)
+}
 for (const content of [
   '旧纯文本',
   null,

@@ -1088,3 +1088,12 @@ textarea,
   min-width: 0;
   min-height: 0;
 }
+
+.note-code-cards .code-editor {
+  border: 0;
+  border-radius: 0;
+}
+.note-code-cards .code-editor .cm-scroller {
+  height: auto;
+  max-height: 360px;
+}

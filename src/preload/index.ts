@@ -22,7 +22,8 @@ const api: DayflowAPI = {
   list: (date) => ipcRenderer.invoke('dayflow:list', date),
   find: (id) => ipcRenderer.invoke('dayflow:find', id),
   create: (input) => ipcRenderer.invoke('dayflow:create', input),
-  edit: (id, content, at, zone) => ipcRenderer.invoke('dayflow:edit', id, content, at, zone),
+  edit: (id, content, at, zone, taskId) =>
+    ipcRenderer.invoke('dayflow:edit', id, content, at, zone, taskId),
   change: (id, action) => ipcRenderer.invoke('dayflow:change', id, action),
   preference: (key, value) => ipcRenderer.invoke('dayflow:preference', key, value),
   reports: () => ipcRenderer.invoke('dayflow:reports'),
