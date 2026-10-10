@@ -214,29 +214,48 @@ textarea,
   display: flex;
   flex-direction: column;
   flex: 1 0 auto;
-  width: calc(100% - 56px);
+  width: calc(100% - 40px);
   max-width: 820px;
   margin: 0 auto;
-  padding: 8px 0 28px;
+  padding: 24px 0 28px;
 }
 .notes-content:has(> [data-slot='empty']) {
   padding-block: 8px;
 }
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .note-row {
-  padding: 18px 16px 22px;
-  border-bottom: 1px solid var(--border);
   scroll-margin: 20px;
 }
-.note-row:last-child {
-  border-bottom: 0;
+.note-card {
+  --card-spacing: 16px;
+  gap: 8px;
+  background: color-mix(in srgb, var(--muted) 24%, var(--card));
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 2%, transparent);
+  transition:
+    border-color 150ms,
+    box-shadow 150ms;
+}
+.note-card:hover,
+.note-card:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 18%, var(--border));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 .note-meta-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-self: center;
 }
 .note-time {
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
 }
@@ -248,9 +267,22 @@ textarea,
   justify-content: space-between;
   align-items: center;
   min-height: 28px;
-  margin-bottom: 8px;
-  color: var(--muted-foreground);
-  font-size: 13px;
+}
+.note-task {
+  max-width: 240px;
+}
+.note-menu {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.note-card:hover .note-menu,
+.note-card:focus-within .note-menu {
+  opacity: 1;
+}
+@media (hover: none) {
+  .note-menu {
+    opacity: 1;
+  }
 }
 .note-text {
   margin: 0;
@@ -409,6 +441,9 @@ textarea,
   color: var(--muted-foreground);
 }
 @media (max-width: 520px) {
+  .notes-content {
+    width: calc(100% - 24px);
+  }
   .composer {
     padding: 6px 12px 10px;
   }
@@ -422,6 +457,87 @@ textarea,
   resize: vertical;
   max-height: 35vh;
   overflow-y: auto;
+}
+.code-editor {
+  --code-string: light-dark(#16804a, #8cd6a5);
+  --code-number: light-dark(#b05216, #e8b47c);
+  --code-function: light-dark(#7e46ad, #c6a4e8);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  background: var(--background);
+}
+.code-editor:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 20%, transparent);
+}
+.code-editor[data-invalid] {
+  border-color: var(--destructive);
+}
+.code-editor .cm-editor {
+  color: var(--foreground);
+}
+.code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.code-editor .cm-scroller {
+  height: 240px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+.code-cards-dialog .code-card-content .code-editor {
+  flex: 1;
+  min-height: 160px;
+  overflow: hidden;
+}
+
+.code-cards-dialog .code-editor .cm-editor {
+  height: 100%;
+}
+
+.code-cards-dialog .code-editor .cm-scroller {
+  height: 100%;
+  min-height: 160px;
+}
+.code-editor .cm-content {
+  padding-block: 10px;
+  caret-color: var(--foreground);
+}
+.code-editor .cm-gutters {
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-right: 1px solid var(--border);
+}
+.code-editor .cm-activeLine,
+.code-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+.code-editor .cm-selectionBackground,
+.code-editor .cm-editor.cm-focused .cm-selectionBackground {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.code-editor .cm-cursor {
+  border-left-color: var(--foreground);
+}
+.code-editor .cm-panels,
+.code-editor .cm-tooltip {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border-color: var(--border);
+}
+.code-editor .cm-search input,
+.code-editor .cm-search button {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: 4px;
+}
+.code-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 .time-controls {
   display: flex;

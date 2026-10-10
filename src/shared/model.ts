@@ -2,10 +2,22 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 import type { Locale } from './languages'
 export type { Locale } from './languages'
 export type LogType = 'manual' | 'todo' | 'schedule' | (string & {})
+export interface CodeCard {
+  id: string
+  name: string
+  language: string
+  code: string
+}
+export interface NoteContent {
+  text: string
+  codeCards: CodeCard[]
+}
 export interface Log {
   id: string
+  taskId: string | null
+  taskName: string | null
   type: LogType
-  content: string
+  content: NoteContent
   recordedAt: number
   timeZone: string
   localDate: string
@@ -15,11 +27,12 @@ export interface Log {
 }
 export interface Submission {
   id: string
+  taskId?: string | null
   recordedAt: number
   timeZone: string
 }
 export interface CreateLog extends Submission {
-  content: string
+  content: NoteContent
   targetDate: string
 }
 export const reportAutoSaveIntervals = ['off', '10', '30', '60', '300'] as const
@@ -141,7 +154,7 @@ export interface DayflowAPI {
   create(input: CreateLog): Promise<Result<Log>>
   edit(
     id: string,
-    content: string,
+    content: NoteContent,
     recordedAt: number | null,
     timeZone: string
   ): Promise<Result<Log>>

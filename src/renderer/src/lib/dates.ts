@@ -1,8 +1,9 @@
-import { localDate, type Submission } from '../../../shared/model'
+import { localDate, type Submission, type CodeCard } from '../../../shared/model'
 export const systemZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 export const today = (): string => localDate(Date.now(), systemZone())
 export interface Draft {
   content: string
+  codeCards: CodeCard[]
   targetDate: string
   timeMode: 'current-time' | 'custom'
   recordedAt: number | null
@@ -12,6 +13,7 @@ export interface Draft {
 export function blankDraft(date = today()): Draft {
   return {
     content: '',
+    codeCards: [],
     targetDate: date,
     timeMode: date === today() ? 'current-time' : 'custom',
     recordedAt: null,
@@ -66,6 +68,7 @@ export function wallTime(date: string, time: string, zone: string): number | nul
 export function hasDraft(draft: Draft): boolean {
   return (
     !!draft.content ||
+    draft.codeCards.length > 0 ||
     !!draft.pendingSubmission ||
     (draft.timeMode === 'custom' && draft.recordedAt !== null)
   )

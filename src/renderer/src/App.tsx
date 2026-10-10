@@ -90,6 +90,7 @@ function App(): React.JSX.Element {
   const [bootError, setBootError] = useState<ErrorCode | null>(null)
   const [view, setView] = useState<View>('daily')
   const [taskCreateOpen, setTaskCreateOpen] = useState(false)
+  const [linkedTask, setLinkedTask] = useState<{ id: string; name: string } | null>(null)
   const [activeTaskCard, setActiveTaskCard] = useState(0)
   const [tasksWide, setTasksWide] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -313,7 +314,7 @@ function App(): React.JSX.Element {
     const edit = editorRef.current
     return (
       !!edit &&
-      (edit.content !== edit.log.content ||
+      (edit.content !== edit.log.content.text ||
         edit.current ||
         (edit.touchedTime &&
           wallTime(edit.date, edit.time, edit.log.timeZone) !== edit.log.recordedAt))
@@ -378,6 +379,7 @@ function App(): React.JSX.Element {
     const original = draftRef.current
     const pending = original.pendingSubmission ?? {
       id: crypto.randomUUID(),
+      taskId: linkedTask?.id ?? null,
       recordedAt: original.timeMode === 'current-time' ? submittedAt : original.recordedAt!,
       timeZone: original.timeZone
     }
@@ -387,7 +389,7 @@ function App(): React.JSX.Element {
     setPendingEditable(false)
     const result = await api.create({
       ...pending,
-      content: original.content,
+      content: { text: original.content, codeCards: original.codeCards },
       targetDate: original.targetDate
     })
     if (!result.ok) {
@@ -417,7 +419,7 @@ function App(): React.JSX.Element {
       editingIdRef.current = log.id
       assignEditor({
         log,
-        content: log.content,
+        content: log.content.text,
         date: log.localDate,
         time: timeText(log.recordedAt, log.timeZone),
         current: false,
@@ -449,7 +451,12 @@ function App(): React.JSX.Element {
       return false
     }
     setLocked(true)
-    const result = await api.edit(edit.log.id, edit.content, at, edit.log.timeZone)
+    const result = await api.edit(
+      edit.log.id,
+      { ...edit.log.content, text: edit.content },
+      at,
+      edit.log.timeZone
+    )
     setLocked(false)
     if (!result.ok) {
       modifyEditor({ error: result.error })
@@ -636,6 +643,11 @@ function App(): React.JSX.Element {
       pendingEditable,
       error: saveError,
       inputRef,
+      linkedTask,
+      onLinkedTaskChange: (task) => {
+        updateDraft({})
+        setLinkedTask(task)
+      },
       onChange: updateDraft,
       onSubmit: () => void submit(Date.now())
     }

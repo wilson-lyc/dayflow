@@ -28,7 +28,9 @@ export function QuickNotesModule({
           />
         </div>
       </div>
-      {(date <= today || composer.value.content) && <QuickNoteModule {...composer} />}
+      {(date <= today || composer.value.content || composer.value.codeCards.length > 0) && (
+        <QuickNoteModule {...composer} />
+      )}
     </div>
   )
 }

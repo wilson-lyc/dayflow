@@ -26,7 +26,9 @@ function load(path) {
         ? { ServiceError }
         : name === '../shared/model'
           ? load('src/shared/model.ts')
-          : require(name),
+          : name === '../../package.json'
+            ? require('../package.json')
+            : require(name),
     module,
     module.exports
   )

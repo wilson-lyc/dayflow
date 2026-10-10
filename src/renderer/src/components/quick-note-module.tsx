@@ -3,9 +3,11 @@ import type { ErrorCode, Locale, NoteEnterAction } from '../../../shared/model'
 import { localDate } from '../../../shared/model'
 import { systemZone, type Draft } from '../lib/dates'
 import { translator, errorKey } from '../lib/i18n'
-import { validateQuickNote } from '../lib/quick-note'
+import { noteLength, validateQuickNote } from '../lib/quick-note'
 import { DateTimePicker } from './date-time-picker'
 import { NoteComposer } from './note-composer'
+import { TaskLinkPicker, type LinkedTask } from './task-link-picker'
+import { CodeCardsDialog } from './code-cards-dialog'
 
 export type QuickNoteModuleProps = {
   enterAction: NoteEnterAction
@@ -18,6 +20,8 @@ export type QuickNoteModuleProps = {
   pendingEditable: boolean
   error: ErrorCode | null
   inputRef?: Ref<HTMLTextAreaElement>
+  linkedTask: LinkedTask | null
+  onLinkedTaskChange: (task: LinkedTask | null) => void
   onChange: (patch: Partial<Draft>) => void
   onSubmit: () => void
 }
@@ -33,32 +37,52 @@ export function QuickNoteModule({
   pendingEditable,
   error,
   inputRef,
+  linkedTask,
+  onLinkedTaskChange,
   onChange,
   onSubmit
 }: QuickNoteModuleProps): React.JSX.Element {
   const t = translator(locale)
   const inputId = useId()
-  const wordCount = Array.from(value.content).length
+  const wordCount = noteLength(value)
   const invalid = validateQuickNote(value, now)
   const inputDisabled =
     busy || blocked || !ready || (value.pendingSubmission !== null && !pendingEditable)
   const sendDisabled = !ready || busy || blocked || !!invalid
   const errorText = error
     ? t(errorKey(error))
-    : value.content && invalid && invalid !== 'empty' && invalid !== 'specifyTime'
+    : (value.content || value.codeCards.length > 0) &&
+        invalid &&
+        invalid !== 'empty' &&
+        invalid !== 'specifyTime'
       ? t(invalid)
       : null
   return (
     <NoteComposer
       resizeLabel={t('resizeComposer')}
       context={
-        <DateTimePicker
-          value={value}
-          locale={locale}
-          now={now}
-          disabled={inputDisabled}
-          onChange={onChange}
-        />
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <DateTimePicker
+            value={value}
+            locale={locale}
+            now={now}
+            disabled={inputDisabled}
+            onChange={onChange}
+          />
+          <CodeCardsDialog
+            value={value.codeCards}
+            text={value.content}
+            locale={locale}
+            disabled={inputDisabled}
+            onChange={(codeCards) => onChange({ codeCards })}
+          />
+          <TaskLinkPicker
+            value={linkedTask}
+            locale={locale}
+            disabled={inputDisabled}
+            onChange={onLinkedTaskChange}
+          />
+        </div>
       }
       status={
         wordCount >= 9000 ? (

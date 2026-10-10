@@ -3,8 +3,9 @@ import { systemZone, type Draft } from './dates'
 import type { MessageKey } from './i18n'
 
 export function validateQuickNote(draft: Draft, now: number): MessageKey | null {
-  if (!draft.content.trim()) return 'empty'
-  if (Array.from(draft.content).length > 10000) return 'tooLong'
+  if (!draft.content.trim() && !draft.codeCards.length) return 'empty'
+  if (draft.codeCards.some((card) => !card.code.trim())) return 'codeRequired'
+  if (noteLength(draft) > 10000) return 'tooLong'
   if (draft.pendingSubmission)
     return draft.pendingSubmission.recordedAt > now ? 'invalidTime' : null
   const today = localDate(now, systemZone())
@@ -15,4 +16,11 @@ export function validateQuickNote(draft: Draft, now: number): MessageKey | null 
     if (draft.recordedAt > now) return 'invalidTime'
   }
   return null
+}
+
+export function noteLength(draft: Pick<Draft, 'content' | 'codeCards'>): number {
+  return (
+    Array.from(draft.content).length +
+    draft.codeCards.reduce((length, card) => length + Array.from(card.code).length, 0)
+  )
 }

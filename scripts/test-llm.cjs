@@ -33,9 +33,11 @@ function loadStore() {
     const localRequire = (name) =>
       name === 'electron'
         ? electron
-        : name.startsWith('.')
-          ? load(path.resolve(path.dirname(file), `${name}.ts`))
-          : require(name)
+        : name.endsWith('.json')
+          ? require(path.resolve(path.dirname(file), name))
+          : name.startsWith('.')
+            ? load(path.resolve(path.dirname(file), `${name}.ts`))
+            : require(name)
     vm.runInThisContext(`(function(require,module,exports){${source}\n})`, { filename: file })(
       localRequire,
       module,
@@ -68,7 +70,7 @@ const provider = store.saveProvider({
 assert.equal(provider.hasApiKey, true)
 assert.equal('apiKey' in provider, false)
 const read = new DatabaseSync(databasePath, { readOnly: true })
-assert.equal(read.prepare('PRAGMA user_version').get().user_version, 3)
+assert.equal(read.prepare('SELECT version FROM database_metadata').get().version, '0.0.0')
 const originalKey = Buffer.from(read.prepare('SELECT api_key FROM llm_providers').get().api_key)
 assert.notEqual(originalKey.toString(), 'secret')
 store.saveProvider({ id: provider.id, name: 'Renamed', baseUrl: 'http://localhost:1234/v1' })
@@ -145,9 +147,111 @@ assert.equal(
     .hasApiKey,
   false
 )
+const taskId = require('node:crypto').randomUUID()
+store.createTask({
+  id: taskId,
+  type: 'todo',
+  name: '关联任务',
+  isAllDay: false,
+  startAt: null,
+  endAt: null,
+  startDate: null,
+  endDateExclusive: null,
+  timeZone: 'UTC',
+  location: null,
+  link: null,
+  repeatRule: null
+})
+const noteInput = () => ({
+  id: require('node:crypto').randomUUID(),
+  content: { text: '任务进展', codeCards: [] },
+  recordedAt: 0,
+  timeZone: 'UTC',
+  targetDate: '1970-01-01',
+  taskId
+})
+const firstNote = noteInput()
+assert.equal(store.create(firstNote).taskId, taskId)
+assert.equal(store.find(firstNote.id).taskName, '关联任务')
+assert.equal(store.list('1970-01-01')[0].taskName, '关联任务')
+assert.equal(store.create(noteInput()).taskId, taskId)
+assert.equal(store.create({ ...noteInput(), taskId: null }).taskId, null)
+assert.equal(store.create({ ...noteInput(), taskId: undefined }).taskId, null)
+assert.throws(() => store.create({ ...noteInput(), taskId: 'missing' }), /state/)
+assert.equal(store.create({ ...firstNote, taskId: null }).taskId, taskId)
+store.edit(firstNote.id, { text: '更新进展', codeCards: [] }, 0, 'UTC')
+store.change(firstNote.id, 'trash')
+store.change(firstNote.id, 'restore')
+assert.equal(store.find(firstNote.id).taskId, taskId)
+assert.equal(loadStore().find(firstNote.id).taskId, taskId)
+const richNote = noteInput()
+richNote.content = {
+  text: '正文\n第二行',
+  codeCards: [
+    {
+      id: 'code-1',
+      name: '任务逻辑',
+      language: 'typescript',
+      code: 'const taskId = "任务"\n  // 缩进'
+    },
+    { id: 'code-2', name: '', language: 'sql', code: 'SELECT * FROM tasks;' }
+  ]
+}
+assert.deepEqual(store.create(richNote).content, richNote.content)
+assert.deepEqual(loadStore().find(richNote.id).content, richNote.content)
+assert.deepEqual(
+  JSON.parse(
+    read.prepare('SELECT content_json FROM logs WHERE id=?').get(richNote.id).content_json
+  ),
+  richNote.content
+)
+assert.equal(
+  read
+    .prepare('PRAGMA table_info(logs)')
+    .all()
+    .some((column) => column.name === 'content'),
+  false
+)
+const editedContent = { ...richNote.content, text: '修改后的正文' }
+assert.deepEqual(store.edit(richNote.id, editedContent, 0, 'UTC').content, editedContent)
+assert.deepEqual(loadStore().find(richNote.id).content.codeCards, richNote.content.codeCards)
+const codeOnly = { text: '', codeCards: [richNote.content.codeCards[0]] }
+assert.deepEqual(store.create({ ...noteInput(), content: codeOnly }).content, codeOnly)
+for (const content of [
+  '旧纯文本',
+  null,
+  {},
+  { text: '正文', codeCards: {} },
+  { text: '正文', codeCards: [null] },
+  { text: '正文', codeCards: [{ id: 'a', name: 1, language: 'sql', code: 'SELECT 1' }] },
+  { text: '正文', codeCards: [{ id: '', language: 'sql', code: 'SELECT 1' }] },
+  { text: '正文', codeCards: [{ id: 'a', language: 1, code: 'SELECT 1' }] },
+  { text: '正文', codeCards: [{ id: 'a', language: '', code: '  ' }] },
+  { text: '正文', codeCards: [codeOnly.codeCards[0], codeOnly.codeCards[0]] }
+]) {
+  assert.throws(() => store.create({ ...noteInput(), content }), /state/)
+}
+assert.throws(
+  () => store.create({ ...noteInput(), content: { text: ' ', codeCards: [] } }),
+  /empty/
+)
+assert.throws(
+  () =>
+    store.create({
+      ...noteInput(),
+      content: { text: 'x'.repeat(10000), codeCards: codeOnly.codeCards }
+    }),
+  /too-long/
+)
+assert.throws(() => store.edit(richNote.id, { text: '正文', codeCards: [null] }, 0, 'UTC'), /state/)
+assert.deepEqual(store.find(richNote.id).content, editedContent)
+const writer = new DatabaseSync(databasePath)
+writer.prepare('UPDATE tasks SET deleted_at=1 WHERE id=?').run(taskId)
+assert.throws(() => store.create(noteInput()), /state/)
+writer.close()
 read.close()
 console.log(
-  'Passed: schema reset, persistence, provider/model CRUD, validation, uniqueness, cascade deletion and key handling.'
+  'Passed: schema reset, persistence, note associations, provider/model CRUD, validation, uniqueness, cascade deletion and key handling.'
 )
 async function testDiscovery() {
   const originalFetch = global.fetch

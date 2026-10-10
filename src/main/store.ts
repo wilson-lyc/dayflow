@@ -11,6 +11,7 @@ import {
   validDate,
   type CreateLog,
   type Log,
+  type NoteContent,
   type Preferences,
   type Bootstrap,
   type ReportWrite,
@@ -62,8 +63,10 @@ function database(): DatabaseSync {
 function map(row: Record<string, unknown>): Log {
   return {
     id: String(row.id),
+    taskId: row.task_id === null ? null : String(row.task_id),
+    taskName: row.task_name == null ? null : String(row.task_name),
     type: String(row.type),
-    content: String(row.content),
+    content: JSON.parse(String(row.content_json)) as NoteContent,
     recordedAt: Number(row.recorded_at),
     timeZone: String(row.time_zone),
     localDate: String(row.local_date),
@@ -73,7 +76,11 @@ function map(row: Record<string, unknown>): Log {
   }
 }
 export function find(id: string): Log | null {
-  const row = database().prepare('SELECT * FROM logs WHERE id=?').get(id)
+  const row = database()
+    .prepare(
+      'SELECT l.*,t.name AS task_name FROM logs l LEFT JOIN tasks t ON t.id=l.task_id WHERE l.id=?'
+    )
+    .get(id)
   return row ? map(row) : null
 }
 export function list(date: string | null): Log[] {
@@ -81,18 +88,44 @@ export function list(date: string | null): Log[] {
   return (
     date === null
       ? database()
-          .prepare('SELECT * FROM logs WHERE is_deleted=1 ORDER BY updated_at DESC,id ASC')
+          .prepare(
+            'SELECT l.*,t.name AS task_name FROM logs l LEFT JOIN tasks t ON t.id=l.task_id WHERE l.is_deleted=1 ORDER BY l.updated_at DESC,l.id ASC'
+          )
           .all()
       : database()
           .prepare(
-            'SELECT * FROM logs WHERE local_date=? AND is_deleted=0 ORDER BY recorded_at,created_at,id'
+            'SELECT l.*,t.name AS task_name FROM logs l LEFT JOIN tasks t ON t.id=l.task_id WHERE l.local_date=? AND l.is_deleted=0 ORDER BY l.recorded_at,l.created_at,l.id'
           )
           .all(date)
   ).map(map)
 }
-function validate(content: string, at: number, zone: string): string {
-  if (typeof content !== 'string' || !content.trim()) throw new ServiceError('empty')
-  if (Array.from(content).length > 10000) throw new ServiceError('too-long')
+function validate(content: NoteContent, at: number, zone: string): string {
+  if (
+    !content ||
+    typeof content !== 'object' ||
+    typeof content.text !== 'string' ||
+    !Array.isArray(content.codeCards)
+  )
+    throw new ServiceError('state')
+  const ids = new Set<string>()
+  let length = Array.from(content.text).length
+  for (const card of content.codeCards) {
+    if (
+      !card ||
+      typeof card.id !== 'string' ||
+      !card.id.trim() ||
+      ids.has(card.id) ||
+      typeof card.name !== 'string' ||
+      typeof card.language !== 'string' ||
+      typeof card.code !== 'string' ||
+      !card.code.trim()
+    )
+      throw new ServiceError('state')
+    ids.add(card.id)
+    length += Array.from(card.code).length
+  }
+  if (!content.text.trim() && !content.codeCards.length) throw new ServiceError('empty')
+  if (length > 10000) throw new ServiceError('too-long')
   if (!Number.isSafeInteger(at) || at > Date.now()) throw new ServiceError('time')
   try {
     return localDate(at, zone)
@@ -107,23 +140,47 @@ export function create(input: CreateLog): Log {
   if (!validDate(input.targetDate) || date !== input.targetDate) throw new ServiceError('time')
   const existing = find(input.id)
   if (existing) return existing
+  const taskId = input.taskId ?? null
+  if (
+    taskId !== null &&
+    (typeof taskId !== 'string' ||
+      !database().prepare('SELECT id FROM tasks WHERE id=? AND deleted_at IS NULL').get(taskId))
+  )
+    throw new ServiceError('state')
   const now = Date.now()
   database()
-    .prepare('INSERT INTO logs VALUES(?,?,?,?,?,?,?,?,0)')
-    .run(input.id, 'manual', input.content, input.recordedAt, input.timeZone, date, now, now)
+    .prepare(
+      'INSERT INTO logs (id,type,content_json,recorded_at,time_zone,local_date,created_at,updated_at,task_id,is_deleted) VALUES(?,?,?,?,?,?,?,?,?,0)'
+    )
+    .run(
+      input.id,
+      'manual',
+      JSON.stringify(input.content),
+      input.recordedAt,
+      input.timeZone,
+      date,
+      now,
+      now,
+      taskId
+    )
   return find(input.id)!
 }
-export function edit(id: string, content: string, at: number | null, zone: string): Log {
+export function edit(id: string, content: NoteContent, at: number | null, zone: string): Log {
   const log = find(id)
   if (!log || log.isDeleted || log.type !== 'manual') throw new ServiceError('state')
   const recordedAt = at === null ? Date.now() : at
   const date = validate(content, recordedAt, zone)
-  if (log.content !== content || log.recordedAt !== recordedAt || log.timeZone !== zone) {
+  const serialized = JSON.stringify(content)
+  if (
+    JSON.stringify(log.content) !== serialized ||
+    log.recordedAt !== recordedAt ||
+    log.timeZone !== zone
+  ) {
     database()
       .prepare(
-        'UPDATE logs SET content=?,recorded_at=?,time_zone=?,local_date=?,updated_at=? WHERE id=? AND is_deleted=0 AND type=?'
+        'UPDATE logs SET content_json=?,recorded_at=?,time_zone=?,local_date=?,updated_at=? WHERE id=? AND is_deleted=0 AND type=?'
       )
-      .run(content, recordedAt, zone, date, Date.now(), id, 'manual')
+      .run(serialized, recordedAt, zone, date, Date.now(), id, 'manual')
   }
   return find(id)!
 }
